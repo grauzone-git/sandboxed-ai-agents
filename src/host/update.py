@@ -1,0 +1,205 @@
+"""Recreate owned sandboxes on a rebuilt image, retaining storage and SSH state."""
+import argparse
+from decimal import Decimal
+import importlib.util
+import json
+import os
+from pathlib import Path
+import re
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+import uuid
+
+from containers import LABEL, create_args
+from workspace import validate_workspace
+
+spec = importlib.util.spec_from_file_location('check_mounts', Path(__file__).with_name('check-mounts.py'))
+mount_policy = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mount_policy)
+
+
+def podman(*args, capture=False, check=True):
+    return subprocess.run(['podman', *map(str, args)], check=check, text=True,
+                          stdout=subprocess.PIPE if capture else None)
+
+
+def inspect(name):
+    return json.loads(podman('container', 'inspect', name, capture=True).stdout)[0]
+
+
+def snapshot(name, project, home):
+    """Validate every persisted input before any build or container mutation."""
+    if not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_.-]*', name):
+        raise ValueError(f'Invalid sandbox name: {name}')
+    container = inspect(name)
+    if container['Name'].lstrip('/') != name:
+        raise ValueError(f'Container name changed: {name}')
+    if (container['Config'].get('Labels') or {}).get(LABEL) != str(project):
+        raise ValueError(f'Container {name} is not owned by this configuration.')
+    status = container['State']['Status']
+    if status not in ('running', 'exited', 'created', 'stopped'):
+        raise ValueError(f'Cannot update {name} while its state is {status}.')
+    mounts = container['Mounts']
+    mount_policy.validate_mounts(name, mounts)
+    workspace = None
+    for mount in mounts:
+        if not mount.get('RW', True):
+            raise ValueError(f'Unexpected read-only mount in {name}: {mount["Destination"]}')
+        if mount['Type'] == 'volume':
+            volume = json.loads(podman('volume', 'inspect', mount['Name'], capture=True).stdout)[0]
+            if (volume.get('Labels') or {}).get(LABEL) != str(project):
+                raise ValueError(f'Volume {mount["Name"]} belongs to another configuration.')
+        if mount['Destination'] == '/workspace':
+            if mount['Type'] == 'bind':
+                directory = validate_workspace(Path(mount['Source']), project, home / '.ssh/sanboxed-agents')
+                if not directory.is_dir():
+                    raise ValueError(f'Workspace directory is missing: {directory}')
+                workspace = f'{directory}:/workspace:Z'
+            else:
+                workspace = f'{name}-workspace:/workspace'
+    host = container['HostConfig']
+    ports = host.get('PortBindings') or {}
+    bindings = ports.get('2222/tcp', [])
+    if (set(ports) != {'2222/tcp'} or len(bindings) != 1
+            or bindings[0].get('HostIp') != '127.0.0.1'):
+        raise ValueError(f'Unexpected SSH port mapping in {name}.')
+    port = int(bindings[0]['HostPort'])
+    if not 1024 <= port <= 65535:
+        raise ValueError(f'Invalid SSH port in {name}.')
+    nano_cpus = host.get('NanoCpus', 0)
+    cpus = Decimal(nano_cpus) / 1_000_000_000
+    if not nano_cpus and host.get('CpuQuota', 0) > 0:
+        cpus = Decimal(host['CpuQuota']) / (host.get('CpuPeriod') or 100000)
+    return dict(name=name, identity=container['Id'], running=container['State']['Running'],
+                workspace=workspace, port=port, memory=host['Memory'], cpus=str(cpus),
+                pids=host['PidsLimit'], shm=host['ShmSize'])
+
+
+def ready(identity):
+    # Persisted host-key files alone do not prove the new sshd has started.
+    for attempt in range(30):
+        result = podman('exec', '--user', '0', identity, '/bin/sh', '-c',
+                        '/usr/sbin/sshd -t && /usr/bin/pgrep -x sshd >/dev/null',
+                        capture=True, check=False)
+        if result.returncode == 0:
+            return
+        time.sleep(0.5)
+    podman('logs', identity, check=False)
+    raise RuntimeError('SSH did not become ready in the replacement container.')
+
+
+def restore(old, new_id, renamed):
+    """Delete only the replacement we created; leave all persistent files intact."""
+    if new_id:
+        podman('rm', '--force', new_id)
+    if renamed:
+        podman('rename', old['identity'], old['name'])
+    if old['running']:
+        podman('start', old['identity'])
+    print(f'Restored {old["name"]} to its previous container.', file=sys.stderr)
+
+
+def replace(old, project, home, image):
+    name = old['name']
+    # Building can take minutes. Reject changed settings before stopping anything.
+    if snapshot(name, project, home) != old:
+        raise ValueError(f'{name} changed during update; retry with its current settings.')
+    backup = f'{name}-update-backup-{uuid.uuid4().hex[:12]}'
+    renamed = False
+    new_id = None
+    print(f'Updating {name} (SSH port {old["port"]})…', flush=True)
+    # Keep transaction files inside the controller's protected state boundary;
+    # /tmp itself can be an explicitly bound, agent-writable workspace.
+    state_dir = project / '.local'
+    state_dir.mkdir(mode=0o700, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='update-', dir=state_dir) as directory:
+        cidfile = Path(directory) / 'container-id'
+        try:
+            if old['running']:
+                podman('stop', old['identity'])
+            podman('rename', old['identity'], backup)
+            renamed = True
+            args = create_args(name, project, image, old['workspace'], old['port'],
+                               old['memory'], old['cpus'], old['pids'], old['shm'], operation='create')
+            # The cidfile also identifies a partially created replacement on failure.
+            podman(*args[:-1], '--cidfile', cidfile, args[-1])
+            candidate = cidfile.read_text().strip()
+            if not re.fullmatch(r'[a-f0-9]{64}', candidate):
+                raise ValueError('Podman returned an invalid replacement container ID.')
+            new_id = candidate
+            podman('start', new_id)
+            ready(new_id)
+            # A fresh writable layer intentionally skips automatic service restore.
+            # Restore saved selections directly, including an empty agent selection.
+            for manager in ('sandbox-agents', 'sandbox-tools'):
+                podman('exec', '--user', '1000:1000', '--workdir', '/workspace', new_id,
+                       f'/usr/local/bin/{manager}', 'boot')
+            if not old['running']:
+                podman('stop', new_id)
+        except (Exception, KeyboardInterrupt):
+            if not new_id and cidfile.exists():
+                candidate = cidfile.read_text().strip()
+                if re.fullmatch(r'[a-f0-9]{64}', candidate):
+                    new_id = candidate
+            try:
+                restore(old, new_id, renamed)
+            except (Exception, KeyboardInterrupt) as error:
+                print(f'Rollback failed: {error}. Previous container ID: {old["identity"]}; '
+                      f'backup name: {backup}. Volumes and SSH files were retained.', file=sys.stderr)
+            raise
+    # A backup-removal failure must not roll back a healthy replacement.
+    try:
+        podman('rm', old['identity'])
+    except subprocess.CalledProcessError:
+        raise RuntimeError(f'{name} was updated, but its stopped backup {backup} could not be removed.') from None
+    print(f'Updated {name}; {"running" if old["running"] else "stopped"}.', flush=True)
+
+
+def main(args=None, *, project=None, image=None):
+    parser = argparse.ArgumentParser(prog="./sandbox update", description=__doc__)
+    parser.add_argument('--all', action='store_true', dest='all_sandboxes',
+                        help='update every sandbox owned by this controller checkout')
+    parser.add_argument('--no-build', action='store_true',
+                        help='use the existing SANDBOX_IMAGE without rebuilding')
+    parser.add_argument('names', nargs='*', metavar='NAME', help='sandbox names to update')
+    options = parser.parse_args(args)
+    if options.all_sandboxes == bool(options.names):
+        parser.error('Supply one or more sandbox names, or --all.')
+    project = (project or Path(__file__).resolve().parents[2]).resolve()
+    image_tag = image or os.environ.get('SANDBOX_IMAGE', 'localhost/agent-sandbox:dev')
+    names = options.names
+    if options.all_sandboxes:
+        names = podman('ps', '--all', '--filter', f'label={LABEL}={project}',
+                       '--format', '{{.Names}}', capture=True).stdout.splitlines()
+    if len(set(names)) != len(names):
+        parser.error('Duplicate sandbox names.')
+    if not names:
+        print('No sandboxes owned by this configuration to update.')
+        return
+    plans = [snapshot(name, project, Path.home()) for name in names]
+    if not options.no_build:
+        podman('build', '--pull=always', '--no-cache', '-t', image_tag,
+               '-f', project / 'src/container/Containerfile', project / 'src/container')
+    # Freeze the image ID so every selected sandbox uses the same build.
+    image = podman('image', 'inspect', '--format', '{{.Id}}', image_tag, capture=True).stdout.strip()
+    if not re.fullmatch(r'(sha256:)?[a-f0-9]{64}', image):
+        raise ValueError('Podman returned an invalid image ID.')
+    for plan in plans:
+        replace(plan, project, Path.home(), image)
+
+
+def interrupted(signum, frame):
+    raise KeyboardInterrupt
+
+
+if __name__ == '__main__':
+    signal.signal(signal.SIGTERM, interrupted)
+    try:
+        main()
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, subprocess.CalledProcessError) as error:
+        sys.exit(f'Update failed: {error}')
+    except KeyboardInterrupt:
+        sys.exit('Update interrupted.')

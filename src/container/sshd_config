@@ -1,0 +1,27 @@
+Port 2222
+ListenAddress 0.0.0.0
+HostKey /var/lib/agent-sshd/ssh_host_ed25519_key
+PidFile /run/sshd.pid
+AuthorizedKeysFile /var/lib/agent-sshd/authorized_keys
+PubkeyAuthentication yes
+AuthenticationMethods publickey
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitEmptyPasswords no
+PermitRootLogin no
+AllowUsers agent
+UsePAM no
+StrictModes yes
+X11Forwarding no
+AllowAgentForwarding no
+PermitTunnel no
+PermitUserEnvironment no
+# VS Code and dashboard connections need TCP and Unix-socket forwarding.
+AllowTcpForwarding local
+AllowStreamLocalForwarding local
+GatewayPorts no
+MaxSessions 30
+Subsystem sftp internal-sftp
+LogLevel VERBOSE
+# Keep all assignments in one directive: sshd uses the first SetEnv value.
+SetEnv PATH=/home/agent/.local/bin:/home/agent/.dotnet/tools:/opt/agent-tools/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin DOTNET_ROOT=/usr/share/dotnet DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 NPM_CONFIG_PREFIX=/home/agent/.local NPM_CONFIG_CACHE=/home/agent/.npm PLAYWRIGHT_BROWSERS_PATH=/home/agent/.cache/ms-playwright

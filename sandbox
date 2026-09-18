@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Stable host entry point. Project identity remains this directory after refactors.
+set -euo pipefail
+ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+exec bash "$ROOT/src/host/cli.sh" "$@"

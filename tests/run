@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# All offline regression checks. Tests isolate HOME and mock Podman/agent processes.
+set -euo pipefail
+ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+cd -- "$ROOT"
+python3 -B tests/check-sources.py
+for test_file in tests/test-*.py; do
+    python3 -B "$test_file"
+done
+for test_file in tests/test-*.cjs; do
+    node "$test_file"
+done

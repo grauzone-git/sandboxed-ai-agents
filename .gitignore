@@ -1,0 +1,4 @@
+.local/
+workspaces/
+__pycache__/
+*.py[cod]

@@ -1,0 +1,71 @@
+{
+  "copilot": {
+    "package": "@github/copilot",
+    "command": "copilot",
+    "version": "latest",
+    "login": [
+      "login",
+      "--device-code"
+    ],
+    "loginMessage": "Starting Copilot device-code login inside this sandbox. Open the printed URL in your desktop browser, enter the one-time code, and authorize GitHub Copilot CLI. Keep this terminal open until login completes.",
+    "docs": "https://docs.github.com/en/copilot/get-started/cli-quickstart"
+  },
+  "claude": {
+    "package": "@anthropic-ai/claude-code",
+    "command": "claude",
+    "version": "latest",
+    "login": [
+      "auth",
+      "login"
+    ],
+    "loginMessage": "Starting Claude login inside this sandbox. Open the printed URL in your browser. If the browser displays a login code, paste it into this terminal when prompted. Keep this terminal open until login completes.",
+    "docs": "https://code.claude.com/docs/en/setup"
+  },
+  "codex": {
+    "package": "@openai/codex",
+    "command": "codex",
+    "version": "latest",
+    "login": [
+      "login",
+      "--device-auth"
+    ],
+    "loginMessage": "Starting device-code login inside this sandbox. Open the printed URL in your browser and enter the one-time code. Keep this terminal open until login completes.",
+    "docs": "https://developers.openai.com/codex/cli"
+  },
+  "hermes": {
+    "installer": "https://hermes-agent.nousresearch.com/install.sh",
+    "command": "hermes",
+    "version": "main",
+    "login": [
+      "model"
+    ],
+    "loginMessage": "Starting Hermes provider setup inside this sandbox. Choose a provider, follow its API-key or browser/code authentication prompts, and select your default model. Keep this terminal open until setup completes.",
+    "port": 9119,
+    "docs": "https://hermes-agent.nousresearch.com/docs/getting-started/installation/"
+  },
+  "opencode": {
+    "package": "opencode-ai",
+    "command": "opencode",
+    "version": "latest",
+    "login": [
+      "auth",
+      "login"
+    ],
+    "loginMessage": "Starting OpenCode login inside this sandbox. Choose a provider and authentication method, then follow its prompts. Enter an API key or complete the displayed browser/code flow as requested. Keep this terminal open until login completes.",
+    "docs": "https://opencode.ai/docs/"
+  },
+  "deepseek": {
+    "package": "@deepseek-ai/dsh",
+    "command": "dsh",
+    "version": "latest",
+    "allowScripts": [
+      "@deepseek-ai/dsh-subprocess-local",
+      "koffi",
+      "node-pty",
+      "@google/genai",
+      "protobufjs"
+    ],
+    "port": 3080,
+    "docs": "https://github.com/deepseek-ai/deepseek-harness"
+  }
+}

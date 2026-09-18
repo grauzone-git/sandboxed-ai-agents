@@ -1,0 +1,113 @@
+ARG BASE_IMAGE=docker.io/library/node:24-bookworm-slim
+FROM ${BASE_IMAGE} AS sdk-downloads
+ARG DOTNET9_VERSION=latest
+ARG DOTNET10_VERSION=latest
+# Download only the SDK distributions, without full SDK image extras (e.g. PowerShell).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
+    && bash /tmp/dotnet-install.sh --channel 9.0 --version "$DOTNET9_VERSION" --install-dir /opt/dotnet --no-path \
+    && bash /tmp/dotnet-install.sh --channel 10.0 --version "$DOTNET10_VERSION" --install-dir /opt/dotnet --no-path
+
+FROM ${BASE_IMAGE}
+COPY --from=sdk-downloads /opt/dotnet/ /usr/share/dotnet/
+RUN ln -s /usr/share/dotnet/dotnet /usr/local/bin/dotnet \
+    && printf 'APT::Install-Recommends "false";\nAPT::Install-Suggests "false";\n' > /etc/apt/apt.conf.d/99no-recommends
+
+ARG PLAYWRIGHT_VERSION=latest
+ARG PLAYWRIGHT_BROWSERS=chromium-firefox
+ARG WITH_NATIVE_BUILD_TOOLS=0
+ARG WITH_EDGE=1
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+       openssh-server openssh-client git gh curl ca-certificates \
+       bash tmux jq ripgrep less unzip xz-utils \
+       sqlite3 procps util-linux libicu72 libssl3 libgssapi-krb5-2 libatomic1 tzdata zlib1g \
+    && case "$WITH_NATIVE_BUILD_TOOLS" in \
+         0) ;; \
+         1) DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3 build-essential pkg-config ;; \
+         *) echo 'WITH_NATIVE_BUILD_TOOLS must be 0 or 1' >&2; exit 1 ;; \
+       esac \
+    && npm install --global --prefix /opt/agent-tools \
+       "playwright@${PLAYWRIGHT_VERSION}" \
+    && case "$PLAYWRIGHT_BROWSERS" in \
+         chromium-firefox) /opt/agent-tools/bin/playwright install-deps chromium firefox ;; \
+         all) /opt/agent-tools/bin/playwright install-deps ;; \
+         *) echo 'PLAYWRIGHT_BROWSERS must be chromium-firefox or all' >&2; exit 1 ;; \
+       esac \
+    && case "$WITH_EDGE" in \
+         0) ;; \
+         1) /opt/agent-tools/bin/playwright install msedge ;; \
+         *) echo 'WITH_EDGE must be 0 or 1' >&2; exit 1 ;; \
+       esac \
+    && rm -rf /var/lib/apt/lists/* /root/.npm /root/.cache/ms-playwright \
+    && rm -f /etc/ssh/ssh_host_* \
+    && { dotnet --list-sdks; node --version; npm --version; \
+         npm list --global --prefix /opt/agent-tools --depth=0; \
+         if command -v microsoft-edge >/dev/null; then microsoft-edge --version; fi; } \
+       > /opt/agent-tools/build-versions.txt
+
+# Install from Microsoft's signed Debian repository. System-wide extensions
+# remain in the image, outside the per-sandbox /home/agent named volume.
+ARG AZURE_CLI_VERSION=latest
+ARG AZURE_DEVOPS_VERSION=latest
+RUN install -d -m 0755 /etc/apt/keyrings \
+    && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
+       -o /etc/apt/keyrings/microsoft-azure-cli.asc \
+    && chmod 0644 /etc/apt/keyrings/microsoft-azure-cli.asc \
+    && . /etc/os-release \
+    && printf 'deb [arch=%s signed-by=/etc/apt/keyrings/microsoft-azure-cli.asc] https://packages.microsoft.com/repos/azure-cli/ %s main\n' \
+       "$(dpkg --print-architecture)" "$VERSION_CODENAME" > /etc/apt/sources.list.d/azure-cli.list \
+    && apt-get update \
+    && if [ "$AZURE_CLI_VERSION" = latest ]; then \
+         DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends azure-cli; \
+       else \
+         DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "azure-cli=${AZURE_CLI_VERSION}-1~${VERSION_CODENAME}"; \
+       fi \
+    && if [ "$AZURE_DEVOPS_VERSION" = latest ]; then \
+         az extension add --name azure-devops --system --only-show-errors; \
+       else \
+         az extension add --name azure-devops --system --version "$AZURE_DEVOPS_VERSION" --only-show-errors; \
+       fi \
+    && az devops --help > /dev/null \
+    && az version >> /opt/agent-tools/build-versions.txt \
+    && rm -rf /var/lib/apt/lists/* /root/.azure /root/.cache/pip
+
+# The Node image already contains the node account with UID 1000.
+RUN if getent passwd 1000 >/dev/null; then \
+        usermod --login agent --home /home/agent --shell /bin/bash "$(getent passwd 1000 | cut -d: -f1)"; \
+    else \
+        groupadd --gid 1000 agent && useradd --uid 1000 --gid 1000 --home-dir /home/agent --shell /bin/bash agent; \
+    fi \
+    && usermod --groups '' agent \
+    && usermod --password '*' agent \
+    && install -d -m 0755 -o 1000 -g 1000 /home/agent /workspace \
+    && install -d -m 0755 /var/lib/agent-sshd \
+    && install -d -m 0755 /run/sshd
+
+ENV HOME=/home/agent \
+    DOTNET_ROOT=/usr/share/dotnet \
+    DOTNET_CLI_TELEMETRY_OPTOUT=1 \
+    DOTNET_NOLOGO=1 \
+    NPM_CONFIG_PREFIX=/home/agent/.local \
+    NPM_CONFIG_CACHE=/home/agent/.npm \
+    PLAYWRIGHT_BROWSERS_PATH=/home/agent/.cache/ms-playwright \
+    PATH=/home/agent/.local/bin:/home/agent/.dotnet/tools:/opt/agent-tools/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# sshd resets the session environment. Set the tool paths for SSH commands too.
+COPY sshd_config /etc/ssh/sshd_config
+COPY agent-profile.sh /etc/profile.d/agent-tools.sh
+COPY entrypoint.sh /usr/local/sbin/agent-entrypoint
+COPY smoke.sh /usr/local/bin/agent-smoke
+COPY agents.json /usr/local/lib/sandbox-agents/agents.json
+COPY tools.json /usr/local/lib/sandbox-agents/tools.json
+COPY agent-manager.cjs /usr/local/lib/sandbox-agents/manager.cjs
+COPY installers.cjs services.cjs /usr/local/lib/sandbox-agents/
+COPY prepare-hermes-dashboard.py /usr/local/lib/sandbox-agents/prepare-hermes-dashboard.py
+COPY sandbox-agents /usr/local/bin/sandbox-agents
+COPY sandbox-agents /usr/local/bin/sandbox-tools
+RUN chmod 0755 /usr/local/sbin/agent-entrypoint /usr/local/bin/agent-smoke /usr/local/bin/sandbox-agents /usr/local/bin/sandbox-tools
+WORKDIR /workspace
+EXPOSE 2222
+USER root
+ENTRYPOINT ["/usr/local/sbin/agent-entrypoint"]

@@ -1,0 +1,81 @@
+{
+  "t3": {
+    "installer": "https://t3.codes/install.sh",
+    "command": "t3",
+    "version": "latest",
+    "port": 3773,
+    "service": [
+      "serve",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "3773"
+    ],
+    "docs": "https://github.com/pingdotgg/t3code/blob/main/docs/user/remote-access.md"
+  },
+  "hermes-dashboard": {
+    "agent": "hermes",
+    "disableWithAgent": true,
+    "command": "hermes-dashboard",
+    "version": "bundled",
+    "args": [
+      "dashboard"
+    ],
+    "port": 9119,
+    "service": [
+      "dashboard",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "9119",
+      "--no-open",
+      "--skip-build"
+    ],
+    "healthPath": "/",
+    "readyTimeout": 90,
+    "docs": "https://hermes-agent.nousresearch.com/docs/user-guide/features/web-dashboard"
+  },
+  "deepseek-ui": {
+    "agent": "deepseek",
+    "disableWithAgent": true,
+    "command": "deepseek-ui",
+    "version": "bundled",
+    "args": [
+      "web"
+    ],
+    "port": 3080,
+    "service": [
+      "web",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "3080",
+      "--no-open"
+    ],
+    "healthPath": "/",
+    "healthStatuses": [
+      200,
+      401
+    ],
+    "readyTimeout": 90,
+    "docs": "https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/cli/reference/README.md"
+  },
+  "tokentracker": {
+    "package": "tokentracker-cli",
+    "command": "tokentracker",
+    "version": "latest",
+    "allowScripts": [
+      "@mongodb-js/zstd"
+    ],
+    "port": 7680,
+    "service": [
+      "serve",
+      "--port",
+      "7680",
+      "--no-open"
+    ],
+    "healthPath": "/",
+    "readyTimeout": 90,
+    "docs": "https://github.com/xiufengsun/TokenTracker"
+  }
+}

@@ -1,0 +1,19 @@
+#!/bin/bash
+set -euo pipefail
+[[ $(id -u) != 0 ]] || { echo 'Run sandbox-agents as the agent user, not root.' >&2; exit 1; }
+manager=sandbox-agents
+mode=()
+if [[ ${0##*/} == sandbox-tools ]]; then
+    manager=sandbox-tools
+    mode=(--tools)
+fi
+# Serialize installation/configuration changes, including automatic service restore.
+case "${1:-list}" in
+    init|set|enable|disable|update|boot|service|refresh-dependent-tools)
+        # Shared lock: bundled UI tools use their agent's installation.
+        mkdir -p "$HOME/.local/state/sandbox-agents"
+        exec flock --close -w 600 "$HOME/.local/state/sandbox-agents/manager.lock" \
+            /usr/local/bin/node /usr/local/lib/sandbox-agents/manager.cjs "${mode[@]}" "$@"
+        ;;
+    *) exec /usr/local/bin/node /usr/local/lib/sandbox-agents/manager.cjs "${mode[@]}" "$@" ;;
+esac
