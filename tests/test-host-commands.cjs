@@ -61,6 +61,8 @@ else process.exit(1); // No image/container: stop before creation in positive pa
     ['agents', 'demo', 'login', 'opencode', '--provider', 'openai'], ['tools', 'demo', 'login', 'opencode'],
     ['agents', 'demo', 'login', 'copilot', '--web-flow'], ['tools', 'demo', 'login', 'copilot'],
     ['agents', 'demo', 'login', 'hermes', 'extra'], ['tools', 'demo', 'login', 'hermes'],
+    ['tools', 'demo', 'login'], ['tools', 'demo', 'login', 'github', 'extra'],
+    ['tools', 'demo', 'login', 'gh'], ['agents', 'demo', 'login', 'github'],
     ['remove'], ['remove', 'demo', '--unknown'], ['remove', 'demo', '--volumes', '--volumes'], ['remove', 'demo', '--ssh-config', '--ssh-config'],
     ...Object.keys(catalog).map(id => [id]),
   ]) {
@@ -74,12 +76,13 @@ else process.exit(1); // No image/container: stop before creation in positive pa
     assert.equal(calls.some(call => call.args[0] === 'exec'), false, 'Shortcut attempted an installation');
     fs.unlinkSync(transportLog);
   }
-  for (const id of ['codex', 'claude', 'opencode', 'copilot', 'hermes']) {
+  for (const id of ['codex', 'claude', 'opencode', 'copilot', 'hermes', 'github']) {
+    const kind = id === 'github' ? 'tools' : 'agents';
     for (const exitCode of [0, 7]) {
-      const result = cli(['agents', 'demo', 'login', id], { TEST_LOGIN_EXIT: String(exitCode) });
+      const result = cli([kind, 'demo', 'login', id], { TEST_LOGIN_EXIT: String(exitCode) });
       assert.equal(result.status, exitCode, 'Login exit code was lost');
       const calls = fs.readFileSync(transportLog, 'utf8').trim().split('\n').map(JSON.parse);
-      assert.deepEqual(calls.at(-1), { tool: 'podman', args: ['exec', '-i', '--user', '1000:1000', '--workdir', '/workspace', 'demo', '/usr/local/bin/sandbox-agents', 'login', id] });
+      assert.deepEqual(calls.at(-1), { tool: 'podman', args: ['exec', '-i', '--user', '1000:1000', '--workdir', '/workspace', 'demo', `/usr/local/bin/sandbox-${kind}`, 'login', id] });
       assert.equal(calls.some(call => call.tool === 'ssh' || call.args.includes('init')), false);
       fs.unlinkSync(transportLog);
     }

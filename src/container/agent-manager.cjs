@@ -249,7 +249,16 @@ function createManager({
     run('tmux', ['-L', `sandbox-${kind}-terminals`, 'new-session', '-A', '-s', id === 'deepseek' ? 'deepseek-cli' : id, '-c', '/workspace', ...command]);
   }
   async function login(id, ...extra) {
-    if (isTools || !id || extra.length) fail('Usage: sandbox-agents login codex|claude|opencode|copilot|hermes');
+    if (isTools) {
+      if (id !== 'github' || extra.length) fail('Usage: sandbox-tools login github');
+      console.log('Starting GitHub login inside this sandbox. Open the printed URL in your desktop browser and enter the one-time code. Keep this terminal open until login completes.');
+      const code = await waitForChild(spawn('gh', ['auth', 'login', '--hostname', 'github.com', '--git-protocol', 'https', '--web'], { env, stdio: 'inherit' }));
+      if (code !== 0) return;
+      const setupCode = await waitForChild(spawn('gh', ['auth', 'setup-git', '--hostname', 'github.com'], { env, stdio: 'inherit' }));
+      if (setupCode !== 0) return;
+      return waitForChild(spawn('/bin/bash', ['/usr/local/lib/sandbox-agents/git-identity.sh'], { env, stdio: 'inherit' }));
+    }
+    if (!id || extra.length) fail('Usage: sandbox-agents login codex|claude|opencode|copilot|hermes');
     const info = entry(id);
     if (!info.login) fail(`Managed login is not supported for ${id}. Use sandbox run NAME ${id} with its own authentication command.`);
     requireEnabled(id);
@@ -270,12 +279,15 @@ function createManager({
     } else args = [...(info.args ?? []), ...args];
     const child = spawn(command, args, { env, stdio: asService ? ['ignore', log, log] : 'inherit' });
     if (log !== undefined) fs.closeSync(log);
+    return waitForChild(child);
+  }
+  async function waitForChild(child) {
     const handlers = new Map(['SIGTERM', 'SIGINT', 'SIGHUP'].map(signal => [signal, () => child.kill(signal)]));
     for (const [signal, handler] of handlers) process.on(signal, handler);
     try {
-      await new Promise((resolve, reject) => {
+      return await new Promise((resolve, reject) => {
         child.once('error', reject);
-        child.once('exit', (code, signal) => { process.exitCode = code ?? (signal ? 1 : 0); resolve(); });
+        child.once('exit', (code, signal) => { process.exitCode = code ?? (signal ? 1 : 0); resolve(process.exitCode); });
       });
     } finally {
       for (const [signal, handler] of handlers) process.removeListener(signal, handler);

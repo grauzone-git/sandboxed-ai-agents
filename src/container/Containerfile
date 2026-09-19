@@ -103,6 +103,7 @@ COPY agents.json /usr/local/lib/sandbox-agents/agents.json
 COPY tools.json /usr/local/lib/sandbox-agents/tools.json
 COPY agent-manager.cjs /usr/local/lib/sandbox-agents/manager.cjs
 COPY installers.cjs services.cjs /usr/local/lib/sandbox-agents/
+COPY git-identity.sh /usr/local/lib/sandbox-agents/git-identity.sh
 COPY prepare-hermes-dashboard.py /usr/local/lib/sandbox-agents/prepare-hermes-dashboard.py
 COPY sandbox-agents /usr/local/bin/sandbox-agents
 COPY sandbox-agents /usr/local/bin/sandbox-tools

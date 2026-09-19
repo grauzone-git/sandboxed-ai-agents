@@ -161,10 +161,49 @@ git config --global user.name 'Your Name'
 git config --global user.email 'you@example.com'
 ```
 
-Private GitHub repositories need `gh auth login` and `gh auth setup-git` before
+For private GitHub repositories, complete [GitHub login](#github-login) before
 the clone. A dedicated repository SSH credential created inside the sandbox
 works as well. None of your host Git settings, SSH keys, or agent sockets are
 mounted, which is the point.
+
+### GitHub login
+
+Run this command on the host:
+
+```bash
+./sandbox tools agent01 login github
+```
+
+The helper runs `gh auth login --hostname github.com --git-protocol https --web`
+inside the sandbox. Open the printed URL in your desktop browser, enter the
+one-time code, and follow the terminal prompts. Keep the terminal open until it
+finishes. After success, it runs `gh auth setup-git --hostname github.com` so Git
+can use the same credentials for HTTPS clones, pulls, and pushes.
+It then prompts for your Git commit name and email, including a GitHub noreply
+address if you prefer, and saves them with `git config --global user.name` and
+`git config --global user.email`. These settings apply to all repositories for
+the sandbox user; a repository's local Git settings can override them. Both
+values are required. Cancelling before entering both leaves the existing
+identity unchanged; GitHub authentication remains completed.
+See the [GitHub CLI login reference](https://cli.github.com/manual/gh_auth_login)
+and [Git credential setup reference](https://cli.github.com/manual/gh_auth_setup-git).
+
+GitHub CLI is built into the image; no tool selection or enabled agent is
+required for this login. Credentials and Git configuration stay in the named
+home volume and survive recreation while that volume is retained. Agents in
+the same sandbox can use them. This is separate from Copilot provider login.
+
+Inside the sandbox, check or remove the login with:
+
+```bash
+gh auth status --hostname github.com
+gh auth logout --hostname github.com
+```
+
+For GitHub Enterprise or other authentication options, run `gh auth login`
+and `gh auth setup-git` with the appropriate `--hostname` inside the sandbox.
+Existing containers need `./sandbox update agent01` from the host to rebuild
+and recreate them with the helper, retaining their named volumes.
 
 ### .NET
 

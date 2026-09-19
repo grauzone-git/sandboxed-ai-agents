@@ -14,6 +14,7 @@ Usage:
   ./sandbox agents NAME login codex|claude|opencode|copilot|hermes
   ./sandbox tools NAME [list|check]
   ./sandbox tools NAME set|enable|disable|update LIST
+  ./sandbox tools NAME login github
   ./sandbox tool NAME TOOL [arguments...]
   ./sandbox run NAME AGENT [arguments...]
   ./sandbox copilot|claude|codex|hermes|opencode|t3|deepseek NAME
@@ -33,8 +34,10 @@ Agents: copilot, claude, codex, hermes, opencode, deepseek; LIST also accepts
 all and versions (e.g. codex@X.Y.Z). Up requires at least one explicit agent,
 including when recreating a container. Nothing defaults to Copilot.
 Existing sandboxes can use 'agents NAME set none' to disable every agent.
-Login requires an enabled agent: Codex/Copilot device code, Claude browser/code login,
+Agent login requires an enabled agent: Codex/Copilot device code, Claude browser/code login,
 or OpenCode/Hermes interactive provider setup.
+GitHub login uses the built-in gh CLI and configures Git HTTPS credentials.
+After login, enter a Git user name and email to save globally in the sandbox home.
 T3 starts headless; its terminal command follows logs. DeepSeek opens a CLI shell.
 Select hermes-dashboard or deepseek-ui to start the corresponding agent UI.
 Disabling either agent also disables its UI tool; cached installs/data remain.
@@ -142,8 +145,12 @@ parse_cli_args() {
     case "$action" in
         agents|tools)
             if [[ ${2:-} == login ]]; then
-                [[ $action == agents && $# -eq 3 && ( $3 == codex || $3 == claude || $3 == opencode || $3 == copilot || $3 == hermes ) ]] \
-                    || fail 'Usage: ./sandbox agents NAME login codex|claude|opencode|copilot|hermes.'
+                if [[ $action == tools ]]; then
+                    [[ $# -eq 3 && $3 == github ]] || fail 'Usage: ./sandbox tools NAME login github.'
+                else
+                    [[ $# -eq 3 && ( $3 == codex || $3 == claude || $3 == opencode || $3 == copilot || $3 == hermes ) ]] \
+                        || fail 'Usage: ./sandbox agents NAME login codex|claude|opencode|copilot|hermes.'
+                fi
             fi
             ;;
         copilot|claude|codex|hermes|opencode|t3|deepseek)

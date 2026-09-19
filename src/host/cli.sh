@@ -39,7 +39,7 @@ case "$action" in
         connect -t "$NAME" "$manager_command session $action"
         ;;
     agents|tools)
-        [[ $# -ge 1 ]] || fail "Usage: ./sandbox $action NAME [list|check|set|enable|disable|update LIST|login codex|claude|opencode|copilot|hermes]"
+        [[ $# -ge 1 ]] || fail "Usage: ./sandbox $action NAME [list|check|set|enable|disable|update LIST|login TARGET]"
         manager_function=agent_manager
         [[ $action != tools ]] || manager_function=tool_manager
         operation=${2:-list}
@@ -59,7 +59,7 @@ case "$action" in
             login)
                 interactive=(-i)
                 [[ ! -t 0 || ! -t 1 ]] || interactive+=(-t)
-                exec podman exec "${interactive[@]}" --user 1000:1000 --workdir /workspace "$NAME" /usr/local/bin/sandbox-agents login "$3"
+                exec podman exec "${interactive[@]}" --user 1000:1000 --workdir /workspace "$NAME" "/usr/local/bin/sandbox-$action" login "$3"
                 ;;
             list|check) "$manager_function" "$operation" ;;
             *) "$manager_function" "$operation" "$spec" ;;

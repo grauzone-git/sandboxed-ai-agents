@@ -97,10 +97,45 @@ async function test() {
   assert.equal(calls.length, 0);
   assert.equal(fs.existsSync(path.join(hermesDir, 'dashboard.json')), false);
   const tools = createManager({ isTools: true, home: agentHome, ...processes });
-  await assert.rejects(tools.login('codex'), /Usage: sandbox-agents login codex/);
-  await assert.rejects(tools.login('opencode'), /Usage: sandbox-agents login/);
-  await assert.rejects(tools.login('copilot'), /Usage: sandbox-agents login/);
-  await assert.rejects(tools.login('hermes'), /Usage: sandbox-agents login/);
+  await assert.rejects(tools.login('codex'), /Usage: sandbox-tools login github/);
+  await assert.rejects(tools.login('opencode'), /Usage: sandbox-tools login github/);
+  await assert.rejects(tools.login('copilot'), /Usage: sandbox-tools login github/);
+  await assert.rejects(tools.login('hermes'), /Usage: sandbox-tools login github/);
+  calls.length = 0;
+  await tools.login('github');
+  assert.deepEqual(calls.map(({ command, args }) => [command, args]), [
+    ['gh', ['auth', 'login', '--hostname', 'github.com', '--git-protocol', 'https', '--web']],
+    ['gh', ['auth', 'setup-git', '--hostname', 'github.com']],
+    ['/bin/bash', ['/usr/local/lib/sandbox-agents/git-identity.sh']],
+  ]);
+  assert.ok(calls.every(call => call.options.stdio === 'inherit'));
+  calls.length = 0;
+  for (const args of [[], ['github', 'extra'], ['gh'], ['all']]) await assert.rejects(tools.login(...args), /Usage/);
+  await assert.rejects(agents.login('github'), /Unknown agent/);
+  assert.equal(calls.length, 0);
+  for (const outcomes of [[7], [null], [0, 9], [0, 0, 1], [0, 0, null]]) {
+    let started = 0;
+    const failing = createManager({ isTools: true, home: agentHome, ...processes,
+      spawn: () => {
+        const code = outcomes[started++];
+        const child = new (require('node:events').EventEmitter)();
+        process.nextTick(() => child.emit('exit', code, code === null ? 'SIGINT' : null));
+        return child;
+      },
+    });
+    await failing.login('github');
+    assert.equal(started, outcomes.length, 'Failed login continued to Git setup');
+    assert.equal(process.exitCode, outcomes.at(-1) ?? 1);
+    process.exitCode = 0;
+  }
+  const missing = createManager({ isTools: true, home: agentHome, ...processes,
+    spawn: () => {
+      const child = new (require('node:events').EventEmitter)();
+      process.nextTick(() => child.emit('error', new Error('spawn gh ENOENT')));
+      return child;
+    },
+  });
+  await assert.rejects(missing.login('github'), /ENOENT/);
   assert.throws(() => tools.install('hermes-dashboard', 'bundled'), /requires the enabled hermes agent/);
   write(config, JSON.stringify({ enabled: { hermes: 'main' } }));
   assert.throws(() => tools.install('hermes-dashboard', 'bundled'), /did not produce index.html/);

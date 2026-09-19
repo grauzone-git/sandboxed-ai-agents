@@ -196,6 +196,7 @@ report a vulnerability.
 ./sandbox start|stop|shell|check|check-full|fingerprint NAME
 ./sandbox agents NAME list|check|set|enable|disable|update|login ...
 ./sandbox tools NAME list|check|set|enable|disable|update ...
+./sandbox tools NAME login github             # GitHub login and Git commit identity
 ./sandbox run NAME AGENT [args...]          # one-off command
 ./sandbox tool NAME TOOL [args...]          # one-off tool command
 ./sandbox copilot|claude|codex|hermes|opencode|deepseek|t3 NAME   # persistent terminal

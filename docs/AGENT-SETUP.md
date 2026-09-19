@@ -57,7 +57,8 @@ Enable an agent before signing in. Credentials live in the named home volume and
 survive container recreation as long as that volume is retained. Nothing is
 copied or forwarded from your host. The managed `login` helper handles Codex,
 Claude, OpenCode, Copilot, and Hermes; DeepSeek has its own setup, described
-below.
+below. For GitHub repository access, use the
+[GitHub CLI login helper](TOOLCHAIN.md#github-login).
 
 ### Codex device-code login
 
