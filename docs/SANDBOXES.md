@@ -256,6 +256,14 @@ Both commands remove the sandbox's generated local SSH config, client keys,
 pinned host fingerprints, and Include entries. The old `--ssh-config` removal
 flag still works for compatibility but no longer does anything you need.
 
+Removal also deduplicates settings throughout `~/.ssh/config` within each
+Host/Match scope, collapses repeated Host headers without an intervening scope
+change, and removes consecutive duplicate Includes. Comments, distinct settings,
+and settings for different hosts are preserved. Includes and Match blocks remain
+scope boundaries; order-dependent settings such as SendEnv removals retain their
+meaning. Existing duplicate entries are cleaned even if the removed sandbox has
+no Include left in the file.
+
 Ownership and cleanup paths are checked before the container is stopped. SSH
 cleanup runs as soon as container removal succeeds, before any volume deletion,
 and leaves unrelated SSH files and settings alone. If the stop or the container

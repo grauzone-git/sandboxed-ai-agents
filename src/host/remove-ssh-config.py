@@ -9,23 +9,101 @@ import sys
 import tempfile
 
 
+def parse_directive(line):
+    tokens = shlex.split(line, comments=True)
+    if not tokens:
+        return '', []
+    directive, separator, value = tokens[0].partition('=')
+    args = ([value] if separator and value else []) + tokens[1:]
+    if args[:1] == ['=']:
+        args = args[1:]
+    return directive.lower(), args
+
+
+def split_comment(line):
+    """Keep inline comments without mistaking quoted or escaped # for comments."""
+    quote = None
+    escaped = False
+    for index, char in enumerate(line):
+        if escaped:
+            escaped = False
+        elif char == '\\' and quote != "'":
+            escaped = True
+        elif quote:
+            if char == quote:
+                quote = None
+        elif char in ('"', "'"):
+            quote = char
+        elif char == '#':
+            return line[:index], line[index:]
+    return line, ''
+
+
+def deduplicate_entries(lines):
+    """Deduplicate settings within a scope, retaining ordering and scope changes."""
+    result = []
+    scope = None
+    seen = set()
+    previous = None
+    for line in lines:
+        try:
+            directive, args = parse_directive(line)
+        except ValueError:
+            result.append(line)
+            scope, previous = None, None
+            seen.clear()
+            continue
+        if not directive:
+            result.append(line)
+            continue
+        body, comment = split_comment(line)
+        # Retain argument quoting: command-valued settings execute through a
+        # shell, so equal shlex tokens alone do not imply equivalent commands.
+        value = re.sub(r'^\s*[^\s=]+(?:\s*=\s*|\s+)?', '', body).strip()
+        entry = (directive, value)
+        duplicate = False
+        if directive == 'host':
+            host = (directive, tuple(args))
+            duplicate = scope == host
+            if not duplicate:
+                scope = host
+                seen.clear()
+        elif directive == 'match':
+            # Match conditions may execute commands or depend on parsing passes.
+            scope = None
+            seen.clear()
+        elif directive == 'include':
+            duplicate = entry == previous
+            if not duplicate:
+                # An included file can leave parsing inside a Host/Match block.
+                scope = None
+                seen.clear()
+        elif directive == 'sendenv':
+            # SendEnv supports removals (-PATTERN); intervening changes matter.
+            duplicate = entry == previous
+        else:
+            duplicate = entry in seen
+            seen.add(entry)
+        if duplicate:
+            if comment:
+                indentation = line[:len(line) - len(line.lstrip())]
+                result.append(indentation + comment)
+        else:
+            result.append(line)
+            previous = entry
+    return result
+
+
 def remove_includes(content, source):
     path = str(source.absolute())
     result = []
     for line in content.decode('utf-8', errors='surrogateescape').splitlines(keepends=True):
         try:
-            tokens = shlex.split(line, comments=True)
+            directive, args = parse_directive(line)
         except ValueError:
             result.append(line)
             continue
-        if not tokens:
-            result.append(line)
-            continue
-        directive, separator, value = tokens[0].partition('=')
-        args = ([value] if separator and value else []) + tokens[1:]
-        if args[:1] == ['=']:
-            args = args[1:]
-        if directive.lower() != 'include' or path not in args:
+        if directive != 'include' or path not in args:
             result.append(line)
             continue
         remaining = [arg for arg in args if arg != path]
@@ -33,8 +111,7 @@ def remove_includes(content, source):
             newline = '\r\n' if line.endswith('\r\n') else '\n' if line.endswith('\n') else ''
             indentation = line[:len(line) - len(line.lstrip())]
             result.append(indentation + 'Include ' + shlex.join(remaining) + newline)
-        # Keep Host * resets: removing one could change following settings' scope.
-    return ''.join(result).encode('utf-8', errors='surrogateescape')
+    return ''.join(deduplicate_entries(result)).encode('utf-8', errors='surrogateescape')
 
 
 def cleanup(name, home, check=False):

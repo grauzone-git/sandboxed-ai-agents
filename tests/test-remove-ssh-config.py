@@ -62,6 +62,105 @@ class RemoveSSHTests(unittest.TestCase):
         resolved = subprocess.run(['ssh', '-G', '-F', str(self.config), 'other'], capture_output=True, text=True, check=True).stdout
         self.assertIn('port 2223\n', resolved)
 
+    def test_removal_collapses_empty_resets_and_preserves_ssh_behavior(self):
+        self.config.write_text(f'Include "{self.other}"\nHost *\n\n'
+                               f'Include "{self.generated}"\nHost *\n\n'
+                               '# Existing defaults\nHost *\nServerAliveInterval 47\n'
+                               'Host private\n    Port 2204\n'
+                               'Host *\n    ConnectTimeout 12\n')
+        def resolved(host):
+            return subprocess.run(['ssh', '-G', '-F', str(self.config), host],
+                                  capture_output=True, text=True, check=True).stdout
+        before = {host: resolved(host) for host in ('other', 'private', 'unrelated')}
+        self.cleanup()
+        self.assertEqual(self.config.read_text().count('Host *'), 2)
+        self.assertIn('# Existing defaults\n', self.config.read_text())
+        self.assertEqual({host: resolved(host) for host in before}, before)
+        after = self.config.read_bytes()
+        self.cleanup()
+        self.assertEqual(self.config.read_bytes(), after)
+
+    def test_duplicate_resets_preserve_comments_crlf_symlink_and_mode(self):
+        original = (f'Include "{self.generated}"\r\nHost *\r\n\r\n'
+                    '# Keep this comment\r\n  hOsT = "*" # Also keep this\r\n'
+                    '\tHost=*\r\nServerAliveInterval 47\r\n')
+        self.config.unlink()
+        target = self.home / 'ssh-dotfile'
+        target.write_bytes(original.encode())
+        target.chmod(0o640)
+        self.config.symlink_to(target)
+        self.cleanup(check=True)
+        self.assertEqual(target.read_bytes(), original.encode())
+        self.cleanup()
+        self.assertTrue(self.config.is_symlink())
+        self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o640)
+        self.assertEqual(target.read_bytes(), b'Host *\r\n\r\n# Keep this comment\r\n'
+                                             b'  # Also keep this\r\nServerAliveInterval 47\r\n')
+
+    def test_resets_are_not_merged_across_scope_boundaries(self):
+        for separator in [f'Include "{self.other}"\n', 'Host private\n',
+                          'Host * !private\n', 'Match host private\n',
+                          'Host "unterminated\n']:
+            with self.subTest(separator=separator):
+                content = ('Host *\n' + separator + 'Host *\n').encode()
+                self.assertEqual(remover.remove_includes(content, self.generated), content)
+
+    def test_existing_duplicates_cleaned_without_matching_include(self):
+        self.config.write_bytes(b'Host *\n\nHost *\n# defaults\nHost *')
+        self.cleanup()
+        self.assertEqual(self.config.read_bytes(), b'Host *\n\n# defaults\n')
+
+    def test_all_setting_types_deduplicated_within_each_host_scope(self):
+        original = ('Host first\n    User alice\n    Port 2200\n'
+                    '    User alice # retain explanation\n    Port 2200\n'
+                    '    IdentityFile "/tmp/key#one"\n'
+                    '    IdentityFile "/tmp/key#one" # key comment\n'
+                    '    LocalForward 8080 localhost:80\n'
+                    '    LocalForward 8080 localhost:80\n'
+                    'Host first\n    User alice\n    ConnectTimeout 12\n'
+                    'Host second\n    User alice\n    Port 2200\n'
+                    'Match host second\n    ServerAliveInterval 47\n'
+                    '    ServerAliveInterval 47\n')
+        cleaned = remover.remove_includes(original.encode(), self.generated).decode()
+        self.assertEqual(cleaned.count('Host first\n'), 1)
+        self.assertEqual(cleaned.count('User alice'), 2)
+        self.assertEqual(cleaned.count('Port 2200'), 2)
+        self.assertEqual(cleaned.count('IdentityFile'), 1)
+        self.assertEqual(cleaned.count('LocalForward'), 1)
+        self.assertEqual(cleaned.count('ServerAliveInterval'), 1)
+        self.assertIn('    # retain explanation\n', cleaned)
+        self.assertIn('    # key comment\n', cleaned)
+        self.assertEqual(remover.remove_includes(cleaned.encode(), self.generated).decode(), cleaned)
+
+    def test_deduplicating_options_preserves_resolved_connections(self):
+        self.config.write_text('Host first\n User alice\n Port 2200\n User alice\n'
+                               'Host first\n Port 2200\n ConnectTimeout 12\n'
+                               'Host second\n User alice\n Port 2200\n'
+                               'Match host second\n ServerAliveInterval 47\n ServerAliveInterval 47\n'
+                               'Host *\n Compression yes\n Compression yes\n')
+        def resolved(host):
+            return subprocess.run(['ssh', '-G', '-F', str(self.config), host],
+                                  capture_output=True, text=True, check=True).stdout
+        before = {host: resolved(host) for host in ('first', 'second', 'unrelated')}
+        self.cleanup()
+        self.assertEqual({host: resolved(host) for host in before}, before)
+
+    def test_include_duplicates_and_scope_boundaries(self):
+        include = f'Include "{self.other}"\n'
+        content = (include + '# comment\n' + include + 'Host *\n User alice\n'
+                   + include + 'Host *\n User alice\n')
+        cleaned = remover.remove_includes(content.encode(), self.generated).decode()
+        self.assertEqual(cleaned.count(include), 2)
+        self.assertEqual(cleaned.count('Host *'), 2)
+        self.assertEqual(cleaned.count('User alice'), 2)
+        self.assertIn('# comment\n', cleaned)
+
+    def test_command_quoting_and_order_dependent_settings_are_preserved(self):
+        content = (b'Host *\n RemoteCommand echo "$HOME"\n RemoteCommand echo \'$HOME\'\n'
+                   b' SendEnv LANG\n SendEnv -LANG\n SendEnv LANG\n'
+                   b'Match exec "true"\nMatch exec "true"\n')
+        self.assertEqual(remover.remove_includes(content, self.generated), content)
+
     def test_preserves_unknown_files_and_file_symlink_targets(self):
         outside = self.home / 'unrelated-key'
         outside.write_text('keep')

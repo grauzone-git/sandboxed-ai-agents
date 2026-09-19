@@ -49,6 +49,7 @@ Run as your normal user, never with sudo. Up only creates new containers.
 Up/start create local SSH files and install their Include only with --ssh-config.
 Add SSH later with 'ssh-config NAME --install' while the sandbox is running.
 Remove always deletes this sandbox's local SSH files and its Include.
+Removal also deduplicates SSH settings within each scope and redundant Host blocks.
 The workspace and named volumes are preserved by default.
 With --volumes, also delete NAME-home, NAME-sshd, and NAME-workspace if present.
 This deletes saved credentials and any files in the named workspace volume.
