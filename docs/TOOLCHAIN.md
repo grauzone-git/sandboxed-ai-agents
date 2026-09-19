@@ -50,6 +50,100 @@ Container defaults are 4 CPUs, 8 GiB RAM, 2,048 processes, and a private 1 GiB
 `SANDBOX_MEMORY` at creation time to change the CPU and RAM limits. Image layers
 are shared between sandboxes; installations and caches are not.
 
+## Nested containers with Podman
+
+On the host, select the capability when creating a sandbox:
+
+```bash
+./sandbox up agent01 --agents codex --capabilities podman --ssh-config
+```
+
+Or enable it on an existing sandbox, retaining its workspace, home, SSH access,
+and agent/tool selections:
+
+```bash
+./sandbox update agent01 --no-build --capabilities podman
+```
+
+Update stops and recreates the sandbox, so save work first. `--no-build` reuses
+your existing base image; it still builds the optional Podman layer. The layer
+installs Debian's `podman`, `uidmap`, `libcap2-bin`, `fuse-overlayfs`, `slirp4netns`,
+and `crun` packages automatically. It is cached across sandboxes using the same base image
+and recipe. No Podman packages are added to sandboxes without the capability.
+The outer host still needs Podman 5+; the inner Podman version comes from Debian.
+
+The host needs accessible `/dev/fuse` and `/dev/net/tun` devices, enabled unprivileged user namespaces,
+and at least 65536 subordinate IDs for your user in both `/etc/subuid` and
+`/etc/subgid`. Startup derives the inner allocation from the actual outer
+UID/GID mappings, excludes container root and the agent identity, and rejects
+an allocation too small to support ordinary images, including UID/GID 65534.
+
+Inside the sandbox, run Podman as `agent`, without sudo or a service daemon:
+
+```bash
+podman info
+podman build -t localhost/my-app:dev .
+podman run --rm localhost/my-app:dev
+# Optional live check: pulls Alpine, builds with RUN, then runs as UID/GID 65534.
+sandbox-podman-check
+```
+
+Nested Podman uses fuse-overlayfs and stores images, named volumes, and container
+metadata under `~/.local/share/containers/storage`, in the existing named home
+volume. They survive sandbox recreation. Transient runtime state, including
+the runroot and libpod temporary files, lives on a tmpfs at `/run/user/1000`
+that is cleared whenever the outer sandbox stops. Existing sandboxes need
+`./sandbox update NAME --no-build` to adopt this mount. Running inner processes
+stop with the outer sandbox; restart your test containers afterwards. Inner cgroups are
+disabled because SSH sessions have no delegated cgroup manager. The outer
+sandbox's CPU, memory, and process limits still apply to the whole sandbox;
+individual inner resource limits are not supported by this configuration.
+
+For a web application, publish to the sandbox's loopback interface:
+
+```bash
+# Inside the sandbox; adapt the application's internal port as needed.
+podman run --rm -p 127.0.0.1:8080:8080 localhost/my-app:dev
+```
+
+Then, from the host with SSH configured:
+
+```bash
+ssh -N -L 127.0.0.1:8080:127.0.0.1:8080 agent01
+```
+
+Open `http://127.0.0.1:8080` on the host. Bind paths passed to inner Podman are
+paths inside the sandbox, such as `/workspace`.
+
+Capabilities accept `podman` or `none` (the default), with unknown or duplicate
+entries rejected. Normal updates preserve each sandbox's selection. To remove
+the capability, use `./sandbox update agent01 --no-build --capabilities none`;
+saved inner images and volumes remain in the home volume.
+
+The image replaces the mapping helpers' setuid bits with specific file
+capabilities: `cap_setuid=ep` for `newuidmap` and `cap_setgid=ep` for `newgidmap`.
+Debian's default setuid helpers can fail with `write to uid_map failed:
+Operation not permitted` inside a rootless container. If you have an older
+capability image, update the sandbox from the host with
+`./sandbox update agent01 --no-build` to build and apply the corrected layer.
+
+The capability allows these file capabilities by omitting `no-new-privileges`,
+passes `/dev/fuse` for storage and `/dev/net/tun` for nested networking,
+disables outer SELinux/AppArmor separation, and unmasks the
+kernel paths needed for inner mounts. It retains the rootless outer namespace,
+resource limits, and a seccomp profile derived from the host's default. The
+derived profile allows `sethostname`, `setdomainname`, and `setns` for inner
+namespace setup while preserving all other host rules. Kernel namespace
+permission checks still apply. The configuration does not use `--privileged` or
+mount a host engine socket. See the [security policy](../SECURITY.md).
+
+If an older sandbox fails during a build with `sethostname: Operation not
+permitted`, recreate it from the host with `./sandbox update agent01 --no-build`.
+An existing process cannot relax its inherited seccomp filter. Update generates
+the profile under the controller's protected `.local` directory before stopping
+the sandbox; a missing or invalid host profile aborts the update.
+This follows the [Podman nesting approach documented by Red Hat](https://www.redhat.com/en/blog/podman-inside-container).
+
 ## Work inside the sandbox
 
 Open a shell from the host with `./sandbox shell agent01`. Everything in the

@@ -13,6 +13,7 @@ HOST = Path(__file__).resolve().parents[1] / 'src/host'
 sys.path.insert(0, str(HOST))
 import update
 from containers import LABEL
+from capabilities import CAPABILITIES_LABEL
 
 
 class UpdateTests(unittest.TestCase):
@@ -23,6 +24,8 @@ class UpdateTests(unittest.TestCase):
         self.project.mkdir()
         self.home = Path(temporary.name) / 'home'
         self.home.mkdir()
+        self.seccomp = self.home / 'seccomp.json'
+        self.seccomp.write_text(json.dumps({'defaultAction': 'SCMP_ACT_ERRNO', 'syscalls': []}))
         self.calls = []
         self.containers = {}
         self.volumes = {}
@@ -69,10 +72,13 @@ class UpdateTests(unittest.TestCase):
             output = json.dumps([self.volumes[args[-1]]])
         elif args[:2] == ['image', 'inspect']:
             output = self.image
+        elif args[0] == 'info':
+            output = json.dumps({'seccompProfilePath': str(self.seccomp)})
         elif args[0] == 'ps':
             output = '\n'.join(c['Name'] for c in self.containers.values() if c['Config']['Labels'][LABEL] == str(self.project))
         elif args[0] == 'build':
-            pass
+            if '--quiet' in args:
+                output = 'e' * 64
         elif args[0] in ('start', 'stop'):
             container = self.get(args[-1])
             container['State'] = {'Status': 'running' if args[0] == 'start' else 'exited', 'Running': args[0] == 'start'}
@@ -138,6 +144,77 @@ class UpdateTests(unittest.TestCase):
         self.run_update('agent01', '--no-build')
         self.assertFalse(any(c[0] == 'build' for c in self.calls))
         self.assertFalse((self.home / '.ssh').exists())
+
+    def test_capabilities_preserved_and_layer_built_once_before_stopping(self):
+        self.add('agent02', running=False)
+        self.add('agent03')
+        for name in ('agent01', 'agent02'):
+            self.get(name)['Config']['Labels'][CAPABILITIES_LABEL] = 'podman'
+        # Updating both an old persistent-runtime sandbox and a new tmpfs one
+        # must produce the same ephemeral runtime configuration.
+        self.get('agent02')['Mounts'].append(dict(Type='tmpfs', Source='tmpfs', Destination='/run/user/1000', RW=True))
+        self.run_update('--all', '--no-build')
+        builds = [call for call in self.calls if call[0] == 'build']
+        self.assertEqual(len(builds), 1)
+        self.assertIn('BASE_IMAGE=' + self.image, builds[0])
+        self.assertLess(self.calls.index(builds[0]), next(i for i, c in enumerate(self.calls) if c[0] == 'stop'))
+        creates = [call for call in self.calls if call[0] == 'create']
+        for call in creates[:2]:
+            self.assertEqual(call[-1], 'e' * 64)
+            self.assertIn('--device=/dev/fuse', call)
+            self.assertIn('--device=/dev/net/tun', call)
+            self.assertIn(f'--security-opt=seccomp={self.project}/.local/nested-podman-seccomp.json', call)
+            self.assertIn(CAPABILITIES_LABEL + '=podman', call)
+            self.assertNotIn('--security-opt=no-new-privileges', call)
+            self.assertIn('/run/user/1000:rw,nosuid,nodev,noexec,mode=0700', call)
+        self.assertEqual(creates[2][-1], self.image)
+        self.assertIn('--security-opt=no-new-privileges', creates[2])
+        self.assertNotIn('--tmpfs', creates[2])
+        self.assertFalse(self.get('agent02')['State']['Running'])
+
+    def test_enable_or_remove_capability_during_update(self):
+        original = copy.deepcopy(self.containers)
+        for old, desired in [('none', 'podman'), ('podman', 'none')]:
+            with self.subTest(desired=desired):
+                self.containers = copy.deepcopy(original)
+                self.calls = []
+                self.get('agent01')['Config']['Labels'][CAPABILITIES_LABEL] = old
+                self.run_update('agent01', '--no-build', '--capabilities', desired)
+                create = next(c for c in self.calls if c[0] == 'create')
+                self.assertIn(CAPABILITIES_LABEL + '=' + desired, create)
+                self.assertEqual('--device=/dev/fuse' in create, desired == 'podman')
+                self.assertEqual('--device=/dev/net/tun' in create, desired == 'podman')
+                self.assertEqual('--security-opt=no-new-privileges' in create, desired == 'none')
+                self.assertEqual('--tmpfs' in create, desired == 'podman')
+
+    def test_capability_build_failure_keeps_all_old_containers(self):
+        original = copy.deepcopy(self.containers)
+        self.failure = lambda args: args[0] == 'build'
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.run_update('agent01', '--no-build', '--capabilities', 'podman')
+        self.assertEqual(self.containers, original)
+        self.assertEqual([call[0] for call in self.mutations()], ['build'])
+
+    def test_capability_start_failure_rolls_back_to_previous_settings(self):
+        original = copy.deepcopy(self.containers)
+        self.failure = lambda args: args[0] == 'exec' and '/bin/sh' in args
+        with self.assertRaises(RuntimeError):
+            self.run_update('agent01', '--no-build', '--capabilities', 'podman')
+        self.assertEqual(self.containers, original)
+
+    def test_missing_seccomp_profile_keeps_old_containers_running(self):
+        original = copy.deepcopy(self.containers)
+        self.seccomp.unlink()
+        with self.assertRaises(OSError):
+            self.run_update('agent01', '--no-build', '--capabilities', 'podman')
+        self.assertEqual(self.containers, original)
+        self.assertEqual(self.mutations(), [])
+
+    def test_unknown_saved_capability_rejected_before_mutation(self):
+        self.get('agent01')['Config']['Labels'][CAPABILITIES_LABEL] = 'docker'
+        with self.assertRaisesRegex(ValueError, 'Capabilities'):
+            self.run_update('agent01')
+        self.assertEqual(self.mutations(), [])
 
     def test_preflight_all_targets_before_build_or_stop(self):
         self.add('agent02', owner='/other-project')
@@ -259,7 +336,8 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(len(self.containers), 1)
 
     def test_invalid_arguments_do_not_mutate(self):
-        for args in [(), ('--all', 'agent01'), ('agent01', 'agent01'), ('--volumes',), ('../agent01',)]:
+        for args in [(), ('--all', 'agent01'), ('agent01', 'agent01'), ('--volumes',), ('../agent01',),
+                     ('agent01', '--capabilities', 'docker')]:
             with self.subTest(args=args), self.assertRaises((ValueError, SystemExit)):
                 self.run_update(*args)
         self.assertEqual(self.mutations(), [])

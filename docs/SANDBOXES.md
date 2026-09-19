@@ -15,6 +15,10 @@ Once you have [built the image](TOOLCHAIN.md#image-options), create a sandbox:
 ```
 
 `up` only ever creates a new container, and it refuses to touch an existing one.
+
+Add `--capabilities podman` to install and enable nested Podman for building and
+testing containers. Capabilities default to `none`; see
+[nested containers](TOOLCHAIN.md#nested-containers-with-podman) for setup and use.
 It also insists on a nonempty `--agents` selection, so you always know what
 landed inside. To reuse a container you already have:
 

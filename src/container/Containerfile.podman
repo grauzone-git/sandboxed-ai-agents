@@ -1,0 +1,25 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+# Debian's setuid mapping helpers fail in nested rootless namespaces. Give each
+# helper its specific file capability instead of escalating the outer container.
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+       podman uidmap libcap2-bin fuse-overlayfs slirp4netns crun \
+    && chmod 0755 /usr/bin/newuidmap /usr/bin/newgidmap \
+    && setcap cap_setuid=ep /usr/bin/newuidmap \
+    && setcap cap_setgid=ep /usr/bin/newgidmap \
+    && setcap -v cap_setuid=ep /usr/bin/newuidmap \
+    && setcap -v cap_setgid=ep /usr/bin/newgidmap \
+    && rm -rf /var/lib/apt/lists/* \
+    && podman --version >> /opt/agent-tools/build-versions.txt
+COPY nested-podman.cjs /usr/local/lib/sandbox-agents/nested-podman.cjs
+COPY nested-podman-entrypoint.sh /usr/local/sbin/nested-podman-entrypoint
+COPY podman-smoke.sh /usr/local/bin/sandbox-podman-check
+COPY nested-containers.conf /etc/containers/containers.conf
+COPY nested-storage.conf /etc/containers/storage.conf
+RUN chmod 0755 /usr/local/sbin/nested-podman-entrypoint /usr/local/bin/sandbox-podman-check \
+    && sed -i '/^SetEnv / s|$| XDG_RUNTIME_DIR=/run/user/1000|' /etc/ssh/sshd_config \
+    && printf 'export XDG_RUNTIME_DIR=/run/user/1000\n' > /etc/profile.d/nested-podman.sh
+ENV XDG_RUNTIME_DIR=/run/user/1000
+ENTRYPOINT ["/usr/local/sbin/nested-podman-entrypoint"]

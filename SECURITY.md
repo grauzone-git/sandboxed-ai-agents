@@ -18,7 +18,7 @@ The software is provided as is, under the terms in [LICENSE](LICENSE).
 
 ## What the sandbox does
 
-Each sandbox is created with these Podman options, defined in one place at
+By default each sandbox is created with these Podman options, defined in one place at
 `src/host/containers.py`:
 
 | Option | Effect |
@@ -33,8 +33,24 @@ Three named volumes per sandbox: workspace, home, and SSH server state. Only the
 workspace may be replaced by a host directory bind, and `src/host/workspace.py`
 rejects any bind that would place the controller's own source, Git metadata, or
 SSH state inside the container.
+The Podman capability adds a tmpfs at `/run/user/1000`, restricted to the agent
+user with mode 0700 and mounted with `nosuid,nodev,noexec`. Runtime state clears
+when the sandbox stops; persistent inner storage stays in the home volume.
 
-Nothing else from the host is mounted. No credentials, no SSH-agent socket, no
+The optional `--capabilities podman` profile passes `/dev/fuse` and `/dev/net/tun`,
+omits `no-new-privileges` so the UID/GID mapping helpers can work, disables outer
+SELinux/AppArmor separation, and unmasks kernel paths for nested mounts. The
+outer container remains rootless with resource limits and a profile derived
+from the host's default seccomp policy. Only `sethostname`, `setdomainname`, and
+`setns` are allowed unconditionally so inner namespaces can be initialized;
+the kernel still enforces namespace capabilities, and all other rules remain.
+It does not run with `--privileged`. The mapping helpers have only
+`cap_setuid=ep` / `cap_setgid=ep` file capabilities, with their setuid bits
+removed. Subordinate IDs exclude container root
+and the agent identity. Inner cgroups are disabled, so the outer limits cover
+the sandbox as a whole. See [nested Podman](docs/TOOLCHAIN.md#nested-containers-with-podman).
+
+No other host paths are exposed. No credentials, no SSH-agent socket, no
 container-engine socket, no display socket, no host networking, no host IPC.
 SSH keys are generated per sandbox, the container host key is pinned on first
 use, and the generated files stay on the host.

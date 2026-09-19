@@ -2,7 +2,7 @@
 
 create_sandbox() {
     podman container exists "$NAME" && fail "Container exists. Use ./sandbox start $NAME."
-    local workspace_path= workspace_mount volume
+    local workspace_path= workspace_mount volume sandbox_image
     local volumes=("$NAME-home" "$NAME-sshd") missing_volumes=()
     if [[ $# -ge 2 ]]; then
         workspace_path=$(python3 "$ROOT/src/host/workspace.py" "$2" "$ROOT" "$SSH_ROOT")
@@ -21,12 +21,13 @@ create_sandbox() {
             missing_volumes+=("$volume")
         fi
     done
+    sandbox_image=$(python3 -B "$ROOT/src/host/capabilities.py" "$ROOT" "$IMAGE" "$capabilities")
     for volume in "${missing_volumes[@]}"; do
         podman volume create --label "$LABEL=$ROOT" "$volume" >/dev/null
     done
     if [[ -n $workspace_path ]]; then mkdir -p -- "$workspace_path"; fi
-    python3 "$ROOT/src/host/containers.py" "$NAME" "$ROOT" "$IMAGE" "$workspace_mount" "$PORT" \
-        "${SANDBOX_MEMORY:-8g}" "${SANDBOX_CPUS:-4}"
+    python3 -B "$ROOT/src/host/containers.py" "$NAME" "$ROOT" "$sandbox_image" "$workspace_mount" "$PORT" \
+        "${SANDBOX_MEMORY:-8g}" "${SANDBOX_CPUS:-4}" "$capabilities"
     wait_for_ssh
     if [[ -z $workspace_path ]]; then
         # Fix only the named volume's mount root, never recurse through project

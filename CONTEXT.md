@@ -38,6 +38,8 @@ state are named volumes. Only the workspace can be swapped for a host directory,
 and `src/host/workspace.py` rejects any bind that would put the controller's own
 source, Git metadata, or SSH state inside the container. Credentials, agent
 sockets, engine sockets, and display sockets are never mounted.
+The Podman capability also mounts `/run/user/1000` as tmpfs so nested runtime
+state disappears on stop/start while inner storage remains in the home volume.
 
 **SSH rather than Dev Containers.** SSH keeps the mount layout explicit, works
 the same for a local container and a remote worker, and is what VS Code Remote
@@ -101,8 +103,15 @@ before a new feature appears.
 
 Agents run as UID 1000 inside Podman's rootless user namespace, mapped back to
 the host user with `keep-id` so workspace files stay editable from both sides.
-`no-new-privileges` is on. There is no host bind by default, no host networking,
-no host IPC, and no forwarded credentials.
+`no-new-privileges` is on by default. The optional `podman` capability installs
+a derived image layer and permits nested rootless containers by passing
+`/dev/fuse` and `/dev/net/tun`, allowing mapping-helper file capabilities,
+disabling SELinux/AppArmor separation,
+and unmasking kernel paths. Its seccomp profile retains the host's rules except
+for allowing hostname and setns operations needed by inner namespaces.
+Selection is stored in a container label and
+preserved by updates unless explicitly overridden. There is no host bind by
+default, no host networking, no host IPC, and no forwarded credentials.
 
 What that does not give you: agents can do anything they like inside their own
 sandbox, including to credentials stored there, and disabling an agent removes

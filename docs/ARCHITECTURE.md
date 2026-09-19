@@ -10,6 +10,10 @@ out the workspace volume for a host bind and leaves the other two alone. SSH is
 the common connection path for editors and desktop agent UIs. Podman owns the
 containers; your desktop owns the sessions inside them.
 
+The optional Podman capability adds a tmpfs at `/run/user/1000` for nested
+container runtime state. It clears on outer-container stop/start, while nested
+images, named volumes, and container metadata persist in the home volume.
+
 ```mermaid
 flowchart LR
   UI[Desktop editor or agent UI] -->|SSH port 2222| A[agent01]
@@ -97,11 +101,22 @@ through `keep-id`, so workspace files stay editable from both sides.
 
 No host directory is bound by default, and only `/workspace` may ever be one.
 Host credentials, SSH-agent sockets, container-engine sockets, display sockets,
-host networking, and host IPC are all absent. `no-new-privileges` is enabled,
+host networking, and host IPC are all absent. `no-new-privileges` is enabled by default,
 networking is user-mode pasta with `--no-map-gw` so the host gateway address is
 not mapped, and only SSH is published, on host loopback. The controller guard
 rejects workspace paths that would expose host-executed controller files or SSH
 state. All of these options live in `src/host/containers.py`.
+
+The optional [Podman capability](TOOLCHAIN.md#nested-containers-with-podman)
+builds a derived image with a nested rootless engine. Its launch profile passes
+`/dev/fuse` and `/dev/net/tun`, allows mapping-helper file capabilities,
+disables SELinux/AppArmor separation, and
+unmasks kernel paths. It retains outer resource limits and derives a seccomp
+profile from the host policy, allowing only `sethostname`, `setdomainname`, and
+`setns` additionally. The generated profile lives under the controller's protected
+`.local` directory and is supplied to Podman at container creation.
+Inner images and volumes live in the sandbox's named home. The capability label
+survives updates, and all required image layers build before any sandbox stops.
 
 What agents can do inside their sandbox is another matter: they can modify their
 entire workspace and named home, credentials included. Disabling an agent

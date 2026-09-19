@@ -4,9 +4,10 @@ usage() {
     cat <<'USAGE'
 Usage:
   ./sandbox build [additional podman build arguments]
-  ./sandbox update NAME...|--all [--no-build] # rebuild image and recreate sandboxes
+  ./sandbox update NAME...|--all [--no-build] [--capabilities LIST]
+                                           # rebuild image and recreate sandboxes
   ./sandbox up [NAME [WORKSPACE [SSH_PORT]]] --agents LIST [--tools LIST] [--ssh-config]
-                                           [--ssh-port PORT]
+                                           [--ssh-port PORT] [--capabilities LIST]
                                            # defaults: agent01, NAME-workspace volume, 2222
   ./sandbox agents NAME [list|check]
   ./sandbox agents NAME set|enable|disable|update LIST
@@ -42,8 +43,16 @@ Tools: t3, hermes-dashboard, deepseek-ui, tokentracker; --tools also accepts all
 T3/TokenTracker accept version pins; bundled UI tools follow their agent version.
 Service/forward aliases: hermes = hermes-dashboard; deepseek = deepseek-ui.
 Omitting --tools reuses the saved tool selection, or none for a fresh home.
+Capabilities: podman or none (default). --capabilities podman installs nested
+rootless Podman for container builds/tests and enables /dev/fuse + /dev/net/tun. It allows
+mapping-helper file capabilities, disables SELinux/AppArmor separation, and unmasks kernel paths.
+Its seccomp profile permits hostname changes and setns in inner namespaces.
+Nested runtime state uses tmpfs; inner images and volumes persist in the home volume.
+Capabilities are chosen at creation and preserved by update unless overridden.
+Use 'update NAME --capabilities podman' to enable nested Podman on an existing sandbox.
 Update builds once without cache, then recreates selected owned sandboxes.
 Use --no-build to apply an image you have already built with custom build options.
+The optional Podman layer is built/cached even with --no-build.
 Update preserves storage, SSH files, settings, and running/stopped state.
 Run as your normal user, never with sudo. Up only creates new containers.
 Up/start create local SSH files and install their Include only with --ssh-config.
@@ -68,6 +77,8 @@ parse_cli_args() {
     fi
     selection=()
     tool_selection=()
+    capabilities=none
+    capabilities_option=false
     remove_volumes=false
     setup_ssh=false
     if [[ $action == start ]]; then
@@ -99,6 +110,11 @@ parse_cli_args() {
                     [[ $# -ge 2 && ${#tool_selection[@]} -eq 0 ]] || fail 'Supply --tools once, followed by a list.'
                     tool_selection=("$(python3 "$ROOT/src/host/agent-selection.py" "$2" tools)")
                     shift 2 ;;
+                --capabilities)
+                    [[ $# -ge 2 && $capabilities_option == false ]] || fail 'Supply --capabilities once, followed by a list.'
+                    capabilities=$(python3 -B "$ROOT/src/host/capabilities.py" "$2")
+                    capabilities_option=true
+                    shift 2 ;;
                 --ssh-config)
                     [[ $setup_ssh == false ]] || fail 'Supply --ssh-config only once.'
                     setup_ssh=true
@@ -112,7 +128,7 @@ parse_cli_args() {
             esac
         done
         set -- "${positional[@]}"
-        [[ $# -le 3 ]] || fail 'Usage: ./sandbox up [NAME [WORKSPACE [SSH_PORT]]] --agents LIST [--tools LIST] [--ssh-config] [--ssh-port PORT]'
+        [[ $# -le 3 ]] || fail 'Usage: ./sandbox up [NAME [WORKSPACE [SSH_PORT]]] --agents LIST [--tools LIST] [--capabilities LIST] [--ssh-config] [--ssh-port PORT]'
         [[ $# -lt 2 || -n ${2:-} ]] || fail 'Omit WORKSPACE for a named volume, or supply a nonempty directory path.'
         [[ $# -lt 3 || ${#port_option[@]} -eq 0 ]] || fail 'Use either positional SSH_PORT or --ssh-port, not both.'
         PORT=${port_option[0]-${3:-2222}}

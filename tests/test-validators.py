@@ -55,7 +55,8 @@ class ValidatorTests(unittest.TestCase):
             external = root / "shared-helper.sh"
             external.write_text("# host helper")
             (modules / "helper.sh").symlink_to(external)
-            for target in (project, modules, external, project / "tests", project / "Makefile"):
+            for target in (project, modules, external, project / "tests", project / "Makefile",
+                           project / "src/host/capabilities.py"):
                 with self.subTest(target=target), self.assertRaises(ValueError):
                     workspace.validate_workspace(target, project, ssh_root)
             safe = project / "workspaces/demo"
@@ -65,6 +66,22 @@ class ValidatorTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 workspace.validate_workspace(alias, project, ssh_root)
             self.assertEqual(workspace.validate_workspace(alias / "workspaces/demo", project, ssh_root), safe)
+
+    def test_runtime_storage_allows_only_the_exact_tmpfs_and_retains_required_volumes(self):
+        persistent = [{"Destination": "/workspace", "Type": "volume", "Name": "demo-workspace"},
+                      {"Destination": "/home/agent", "Type": "volume", "Name": "demo-home"},
+                      {"Destination": "/var/lib/agent-sshd", "Type": "volume", "Name": "demo-sshd"}]
+        runtime = {"Destination": "/run/user/1000", "Type": "tmpfs", "Source": "tmpfs"}
+        self.assertIn('/run/user/1000: tmpfs ephemeral', mounts.validate_mounts('demo', [*persistent, runtime]))
+        for inventory in [
+            [*persistent, {**runtime, 'Type': 'bind', 'Source': '/host/runtime'}],
+            [*persistent, {**runtime, 'Type': 'volume', 'Name': 'demo-runtime'}],
+            [*persistent, {**runtime, 'Destination': '/run'}],
+            [*persistent, runtime, runtime],
+            [*persistent[:2], runtime],
+        ]:
+            with self.subTest(inventory=inventory), self.assertRaises(ValueError):
+                mounts.validate_mounts('demo', inventory)
 
 
 if __name__ == "__main__":

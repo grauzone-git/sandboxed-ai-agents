@@ -9,6 +9,10 @@ def validate_mounts(name, mounts):
         "/home/agent": (("volume", f"{name}-home"),),
         "/var/lib/agent-sshd": (("volume", f"{name}-sshd"),),
     }
+    # Optional for compatibility with sandboxes created before runtime tmpfs
+    # support. Only this exact tmpfs is allowed; never a bind or named volume.
+    if any(mount.get('Destination') == '/run/user/1000' for mount in mounts):
+        expected['/run/user/1000'] = (("tmpfs", None),)
     if len(mounts) != len(expected):
         raise ValueError(f"Unexpected mounts: {mounts!r}")
     descriptions = []
@@ -21,7 +25,8 @@ def validate_mounts(name, mounts):
         volume = mount.get("Name") if kind == "volume" else None
         if (kind, volume) not in allowed:
             raise ValueError(f"Unexpected mount: {mount!r}")
-        descriptions.append(f"{destination}: {kind} {volume or mount['Source']}")
+        source = 'ephemeral' if kind == 'tmpfs' else volume or mount['Source']
+        descriptions.append(f"{destination}: {kind} {source}")
     return descriptions
 
 
@@ -30,7 +35,7 @@ def main(args):
         raise ValueError("Usage: check-mounts.py NAME < MOUNTS_JSON")
     for description in validate_mounts(args[0], json.load(sys.stdin)):
         print(description)
-    print("Mount policy: workspace bind or named volume, named home and SSH volumes: OK")
+    print("Mount policy: workspace bind or named volume, named home and SSH volumes, optional runtime tmpfs: OK")
 
 
 if __name__ == "__main__":

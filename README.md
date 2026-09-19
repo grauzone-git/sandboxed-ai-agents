@@ -124,6 +124,19 @@ and SSH port:
 ./sandbox up agent02 --ssh-port 2223 --agents claude --ssh-config
 ```
 
+To build and test containers inside a sandbox, add `--capabilities podman`:
+
+```bash
+./sandbox up agent01 --agents codex --capabilities podman --ssh-config
+# For an existing sandbox instead:
+./sandbox update agent01 --no-build --capabilities podman
+```
+
+The capability automatically installs and configures rootless Podman in an
+optional image layer. It changes the sandbox's security settings to permit
+nesting. See [nested containers](docs/TOOLCHAIN.md#nested-containers-with-podman)
+for requirements, build/run commands, storage, and port forwarding.
+
 ### Update
 
 ```bash
@@ -157,8 +170,8 @@ flowchart LR
 
 Agents run as UID 1000 inside Podman's rootless user namespace, mapped back to
 your host user with `keep-id` so workspace files stay editable from both sides.
-`no-new-privileges` is on. The launcher refuses workspace binds that would
-expose its own source, Git metadata, or SSH state.
+`no-new-privileges` is on unless the Podman capability is selected. The launcher
+refuses workspace binds that would expose its own source, Git metadata, or SSH state.
 
 ### What this does not protect you from
 
@@ -179,7 +192,7 @@ report a vulnerability.
 
 ```text
 ./sandbox build [podman build args]
-./sandbox up NAME [WORKSPACE [SSH_PORT]] --agents LIST [--tools LIST] [--ssh-config]
+./sandbox up NAME [WORKSPACE [SSH_PORT]] --agents LIST [--tools LIST] [--capabilities LIST] [--ssh-config]
 ./sandbox start|stop|shell|check|check-full|fingerprint NAME
 ./sandbox agents NAME list|check|set|enable|disable|update|login ...
 ./sandbox tools NAME list|check|set|enable|disable|update ...
@@ -189,7 +202,7 @@ report a vulnerability.
 ./sandbox service NAME TOOL status|start|stop|restart|logs
 ./sandbox forward NAME TOOL [LOCAL_PORT]
 ./sandbox ssh-config NAME [--install]
-./sandbox update NAME...|--all [--no-build]
+./sandbox update NAME...|--all [--no-build] [--capabilities LIST]
 ./sandbox remove NAME [--volumes]
 ```
 

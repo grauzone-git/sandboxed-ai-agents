@@ -14,6 +14,7 @@ import time
 import uuid
 
 from containers import LABEL, create_args
+from capabilities import CAPABILITIES_LABEL, parse_capabilities, prepare_image
 from workspace import validate_workspace
 
 spec = importlib.util.spec_from_file_location('check_mounts', Path(__file__).with_name('check-mounts.py'))
@@ -73,9 +74,10 @@ def snapshot(name, project, home):
     cpus = Decimal(nano_cpus) / 1_000_000_000
     if not nano_cpus and host.get('CpuQuota', 0) > 0:
         cpus = Decimal(host['CpuQuota']) / (host.get('CpuPeriod') or 100000)
+    capabilities = parse_capabilities((container['Config'].get('Labels') or {}).get(CAPABILITIES_LABEL, 'none'))
     return dict(name=name, identity=container['Id'], running=container['State']['Running'],
                 workspace=workspace, port=port, memory=host['Memory'], cpus=str(cpus),
-                pids=host['PidsLimit'], shm=host['ShmSize'])
+                pids=host['PidsLimit'], shm=host['ShmSize'], capabilities=capabilities)
 
 
 def ready(identity):
@@ -102,7 +104,7 @@ def restore(old, new_id, renamed):
     print(f'Restored {old["name"]} to its previous container.', file=sys.stderr)
 
 
-def replace(old, project, home, image):
+def replace(old, project, home, image, capabilities=None):
     name = old['name']
     # Building can take minutes. Reject changed settings before stopping anything.
     if snapshot(name, project, home) != old:
@@ -123,7 +125,8 @@ def replace(old, project, home, image):
             podman('rename', old['identity'], backup)
             renamed = True
             args = create_args(name, project, image, old['workspace'], old['port'],
-                               old['memory'], old['cpus'], old['pids'], old['shm'], operation='create')
+                               old['memory'], old['cpus'], old['pids'], old['shm'], operation='create',
+                               capabilities=old['capabilities'] if capabilities is None else capabilities)
             # The cidfile also identifies a partially created replacement on failure.
             podman(*args[:-1], '--cidfile', cidfile, args[-1])
             candidate = cidfile.read_text().strip()
@@ -164,6 +167,8 @@ def main(args=None, *, project=None, image=None):
                         help='update every sandbox owned by this controller checkout')
     parser.add_argument('--no-build', action='store_true',
                         help='use the existing SANDBOX_IMAGE without rebuilding')
+    parser.add_argument('--capabilities', type=parse_capabilities, metavar='LIST',
+                        help='replace capabilities with podman or none; omitted preserves each sandbox')
     parser.add_argument('names', nargs='*', metavar='NAME', help='sandbox names to update')
     options = parser.parse_args(args)
     if options.all_sandboxes == bool(options.names):
@@ -187,8 +192,12 @@ def main(args=None, *, project=None, image=None):
     image = podman('image', 'inspect', '--format', '{{.Id}}', image_tag, capture=True).stdout.strip()
     if not re.fullmatch(r'(sha256:)?[a-f0-9]{64}', image):
         raise ValueError('Podman returned an invalid image ID.')
+    # Finish every optional image build before stopping any existing sandbox.
+    images = {capability: prepare_image(project, image, capability, runner=podman)
+              for capability in sorted({options.capabilities or plan['capabilities'] for plan in plans})}
     for plan in plans:
-        replace(plan, project, Path.home(), image)
+        capability = options.capabilities or plan['capabilities']
+        replace(plan, project, Path.home(), images[capability], capability)
 
 
 def interrupted(signum, frame):
