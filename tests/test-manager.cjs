@@ -153,6 +153,37 @@ async function test() {
   assert.equal(fs.existsSync(path.join(hermesDir, 'dashboard.json')), true, 'Hermes disable removed cached dashboard');
   write(path.join(agentHome, '.local/share/sandbox-tools/t3/bin/t3'), 'test executable');
   calls.length = 0;
+  for (const args of [[], ['github'], ['t3', 'extra']]) await assert.rejects(tools.setup(...args), /Usage/);
+  await assert.rejects(agents.setup('t3'), /Usage/);
+  assert.equal(calls.length, 0);
+  await tools.setup('t3');
+  assert.deepEqual(calls.map(({ command, args }) => [command, args]), [
+    [path.join(agentHome, '.local/share/sandbox-tools/t3/bin/t3'), ['connect', 'link', '--headless']],
+    ['/usr/local/bin/sandbox-tools', ['service', 't3', 'restart']],
+  ]);
+  assert.ok(calls.every(call => call.options.stdio === 'inherit'));
+  for (const outcomes of [[7], [null], [0, 9]]) {
+    let started = 0;
+    const failing = createManager({ isTools: true, home: agentHome, ...processes,
+      spawn: () => {
+        const code = outcomes[started++];
+        const child = new (require('node:events').EventEmitter)();
+        process.nextTick(() => child.emit('exit', code, code === null ? 'SIGINT' : null));
+        return child;
+      },
+    });
+    await failing.setup('t3');
+    assert.equal(started, outcomes.length);
+    assert.equal(process.exitCode, outcomes.at(-1) ?? 1);
+    process.exitCode = 0;
+  }
+  const savedTools = fs.readFileSync(toolConfig, 'utf8');
+  write(toolConfig, JSON.stringify({ enabled: {} }));
+  calls.length = 0;
+  await assert.rejects(tools.setup('t3'), /disabled/);
+  assert.equal(calls.length, 0, 'Disabled T3 setup started a process');
+  write(toolConfig, savedTools);
+  calls.length = 0;
   await tools.terminalSession('t3');
   assert.equal(calls[0].command, '/usr/local/bin/sandbox-tools');
   assert.deepEqual(Array.from(calls[0].args), ['service', 't3', 'start']);

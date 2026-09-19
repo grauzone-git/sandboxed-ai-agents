@@ -248,6 +248,15 @@ function createManager({
     }
     run('tmux', ['-L', `sandbox-${kind}-terminals`, 'new-session', '-A', '-s', id === 'deepseek' ? 'deepseek-cli' : id, '-c', '/workspace', ...command]);
   }
+  async function setup(id, ...extra) {
+    if (!isTools || id !== 't3' || extra.length) fail('Usage: sandbox-tools setup t3');
+    requireEnabled(id);
+    console.log(entry(id).setupMessage);
+    const code = await launch(id, entry(id).setup);
+    if (code !== 0) return;
+    // Service changes use the wrapper's lock, after interactive authorization ends.
+    return waitForChild(spawn(managerPath, ['service', id, 'restart'], { env, stdio: 'inherit' }));
+  }
   async function login(id, ...extra) {
     if (isTools) {
       if (id !== 'github' || extra.length) fail('Usage: sandbox-tools login github');
@@ -320,6 +329,7 @@ function createManager({
       case 'list': return list();
       case 'run': return launch(args[0], args.slice(1));
       case 'login': return login(...args);
+      case 'setup': return setup(...args);
       case 'session': return terminalSession(args[0]);
       case 'refresh-dependent-tools': {
         if (!isTools) return;
@@ -353,7 +363,7 @@ function createManager({
     }
   }
 
-  return { main, selection, initialSelection, install, apply, terminalSession, login };
+  return { main, selection, initialSelection, install, apply, terminalSession, login, setup };
 }
 
 if (require.main === module) {

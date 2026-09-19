@@ -275,6 +275,55 @@ Initial setup may install hooks inside the sandbox.
 
 ### T3 Code headless server
 
+To set up T3 Connect, run these commands on the host:
+
+```bash
+./sandbox tools agent01 enable t3
+./sandbox tools agent01 setup t3
+```
+
+Setup requires T3 to be enabled and installed. It runs
+`t3 connect link --headless` inside the sandbox. Follow the relay installation
+and sign-in prompts, open the printed browser link, confirm the code, and
+approve access. After the command succeeds, the helper restarts the managed
+T3 server to activate the connection. This interrupts current T3 connections.
+The sandbox must remain running for remote access.
+
+The managed server runs `t3 serve --host 127.0.0.1 --port 3773` in tmux. It starts
+after Connect setup and is restored whenever the existing sandbox starts again,
+including after `./sandbox stop agent01` followed by `./sandbox start agent01`.
+Keep the `t3` tool enabled for this automatic restoration. You do not need to run
+`t3 serve` manually or install a systemd service inside the container.
+
+If you used plain `t3 connect` and its background-service setup failed, start the
+sandbox-managed server from the host with `./sandbox service agent01 t3 restart`.
+Inspect failures with `./sandbox service agent01 t3 logs`. The Connect helper
+uses `connect link --headless` to avoid that background-service installer.
+
+Automatic sandbox startup after a host-machine reboot is not configured by this
+launcher. Start the sandbox with `./sandbox start agent01` after the host boots;
+enabled T3 is then restored inside it.
+
+Sign in to the same T3 Connect account on your other device and select this
+environment. No SSH forward or OAuth callback port is needed. Settings and
+credentials remain in the sandbox's named home volume. The existing service
+manager supervises the server; setup does not install T3's background service.
+See [T3 remote access](https://github.com/pingdotgg/t3code/blob/main/docs/user/remote-access.md).
+
+Check saved setup or revoke access from the host with:
+
+```bash
+./sandbox tool agent01 t3 connect status
+./sandbox tool agent01 t3 connect logout
+./sandbox service agent01 t3 restart
+```
+
+Status reports saved configuration, not live reachability. Existing containers
+need `./sandbox update agent01` to get this helper. If a pinned T3 version lacks
+`connect link --headless`, update T3 first.
+
+For direct pairing through an SSH forward:
+
 ```bash
 ./sandbox tools agent01 enable t3
 ./sandbox forward agent01 t3

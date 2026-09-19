@@ -44,7 +44,7 @@ case "$action" in
         [[ $action != tools ]] || manager_function=tool_manager
         operation=${2:-list}
         case "$operation" in
-            login) ;; # Validated before contacting Podman.
+            login|setup) ;; # Validated before contacting Podman.
             list|check) [[ $# -le 2 ]] || fail 'Unexpected argument.' ;;
             set|enable|disable|update)
                 [[ $# -eq 3 ]] || fail "Usage: ./sandbox $action NAME $operation LIST"
@@ -56,10 +56,10 @@ case "$action" in
         esac
         owned
         case "$operation" in
-            login)
+            login|setup)
                 interactive=(-i)
                 [[ ! -t 0 || ! -t 1 ]] || interactive+=(-t)
-                exec podman exec "${interactive[@]}" --user 1000:1000 --workdir /workspace "$NAME" "/usr/local/bin/sandbox-$action" login "$3"
+                exec podman exec "${interactive[@]}" --user 1000:1000 --workdir /workspace "$NAME" "/usr/local/bin/sandbox-$action" "$operation" "$3"
                 ;;
             list|check) "$manager_function" "$operation" ;;
             *) "$manager_function" "$operation" "$spec" ;;

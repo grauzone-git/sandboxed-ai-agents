@@ -3,6 +3,8 @@
     "installer": "https://t3.codes/install.sh",
     "command": "t3",
     "version": "latest",
+    "setup": ["connect", "link", "--headless"],
+    "setupMessage": "Starting T3 Connect setup inside this sandbox. Open the printed link in your browser, confirm the code, and approve access. Keep this terminal open until setup completes. The managed T3 server will then restart to activate the connection.",
     "port": 3773,
     "service": [
       "serve",

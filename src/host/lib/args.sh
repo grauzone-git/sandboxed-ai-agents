@@ -15,6 +15,7 @@ Usage:
   ./sandbox tools NAME [list|check]
   ./sandbox tools NAME set|enable|disable|update LIST
   ./sandbox tools NAME login github
+  ./sandbox tools NAME setup t3
   ./sandbox tool NAME TOOL [arguments...]
   ./sandbox run NAME AGENT [arguments...]
   ./sandbox copilot|claude|codex|hermes|opencode|t3|deepseek NAME
@@ -39,6 +40,7 @@ or OpenCode/Hermes interactive provider setup.
 GitHub login uses the built-in gh CLI and configures Git HTTPS credentials.
 After login, enter a Git user name and email to save globally in the sandbox home.
 T3 starts headless; its terminal command follows logs. DeepSeek opens a CLI shell.
+T3 Connect setup requires enabled T3 and restarts its managed server after sign-in.
 Select hermes-dashboard or deepseek-ui to start the corresponding agent UI.
 Disabling either agent also disables its UI tool; cached installs/data remain.
 Forwarding TokenTracker starts its installed dashboard if needed (port 7680).
@@ -144,6 +146,9 @@ parse_cli_args() {
     fi
     case "$action" in
         agents|tools)
+            if [[ ${2:-} == setup ]]; then
+                [[ $action == tools && $# -eq 3 && $3 == t3 ]] || fail 'Usage: ./sandbox tools NAME setup t3.'
+            fi
             if [[ ${2:-} == login ]]; then
                 if [[ $action == tools ]]; then
                     [[ $# -eq 3 && $3 == github ]] || fail 'Usage: ./sandbox tools NAME login github.'

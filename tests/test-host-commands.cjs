@@ -31,7 +31,7 @@ fs.appendFileSync(process.env.TEST_TRANSPORT_LOG, JSON.stringify({tool: require(
   write(path.join(mockBin, 'podman'), recorder + `
 if (args[0] === 'info') console.log('true');
 else if (args[0] === 'inspect') console.log(process.env.TEST_OWNER || process.env.TEST_PROJECT);
-else if (args[0] === 'exec' && args.includes('login')) process.exit(Number(process.env.TEST_LOGIN_EXIT || 0));
+else if (args[0] === 'exec' && (args.includes('login') || args.includes('setup'))) process.exit(Number(process.env.TEST_LOGIN_EXIT || 0));
 else if (args[0] === 'exec' && args.includes('service') && args.at(-1) === 'start') process.exit(0);
 else if (process.env.TEST_REMOVE && ['stop', 'rm'].includes(args[0])) process.exit(args[0] === process.env.TEST_REMOVE_FAIL ? 1 : 0);
 else if (process.env.TEST_REMOVE && args[0] === 'volume' && args[1] === 'inspect') console.log(process.env.TEST_FOREIGN_VOLUME && args.at(-1).endsWith('-sshd') ? '/foreign' : process.env.TEST_PROJECT);
@@ -63,6 +63,8 @@ else process.exit(1); // No image/container: stop before creation in positive pa
     ['agents', 'demo', 'login', 'hermes', 'extra'], ['tools', 'demo', 'login', 'hermes'],
     ['tools', 'demo', 'login'], ['tools', 'demo', 'login', 'github', 'extra'],
     ['tools', 'demo', 'login', 'gh'], ['agents', 'demo', 'login', 'github'],
+    ['tools', 'demo', 'setup'], ['tools', 'demo', 'setup', 'github'],
+    ['tools', 'demo', 'setup', 't3', 'extra'], ['agents', 'demo', 'setup', 't3'],
     ['remove'], ['remove', 'demo', '--unknown'], ['remove', 'demo', '--volumes', '--volumes'], ['remove', 'demo', '--ssh-config', '--ssh-config'],
     ...Object.keys(catalog).map(id => [id]),
   ]) {
@@ -86,6 +88,13 @@ else process.exit(1); // No image/container: stop before creation in positive pa
       assert.equal(calls.some(call => call.tool === 'ssh' || call.args.includes('init')), false);
       fs.unlinkSync(transportLog);
     }
+  }
+  for (const exitCode of [0, 7]) {
+    assert.equal(cli(['tools', 'demo', 'setup', 't3'], { TEST_LOGIN_EXIT: String(exitCode) }).status, exitCode);
+    const calls = fs.readFileSync(transportLog, 'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepEqual(calls.at(-1), { tool: 'podman', args: ['exec', '-i', '--user', '1000:1000', '--workdir', '/workspace', 'demo', '/usr/local/bin/sandbox-tools', 'setup', 't3'] });
+    assert.equal(calls.some(call => call.tool === 'ssh' || call.args.includes('init')), false);
+    fs.unlinkSync(transportLog);
   }
   for (const spec of ['codex', 'all', 'claude,codex']) {
     const result = cli(['up', 'demo', '--agents', spec]);
