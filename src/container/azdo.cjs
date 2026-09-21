@@ -4,9 +4,39 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { readSettings, saveSettings, clearSettings } = require('./azdo-settings.cjs');
 
 function main(args) {
-  let token = process.env.AZURE_DEVOPS_EXT_PAT;
+  if (args.length === 1 && args[0] === '--clear-pat') {
+    clearSettings();
+    console.log('Saved PAT removed. Restart existing shells and agents to remove their inherited copies.');
+    return 0;
+  }
+  if (args[0] === '--save-pat') {
+    const token = fs.readFileSync(0, 'utf8');
+    if (args.length !== 2 || !/^https:\/\/[^\s]+$/.test(args[1])) {
+      throw new Error('Supply an HTTPS Azure DevOps organization URL.');
+    }
+    if (!token || /[\r\n\0]/.test(token)) throw new Error('Enter a nonempty, single-line PAT.');
+    if (args[1].includes(token)) throw new Error('The organization URL must not contain the PAT.');
+    const env = { ...process.env, AZURE_CONFIG_DIR: path.join(os.homedir(), '.azure'),
+      AZURE_DEVOPS_EXT_CONFIG_DIR: path.join(os.homedir(), '.azure/azuredevops'),
+      AZURE_CORE_COLLECT_TELEMETRY: 'false', AZURE_LOGGING_ENABLE_LOG_FILE: 'false' };
+    delete env.AZURE_DEVOPS_EXT_PAT;
+    const configured = spawnSync('az', ['devops', 'configure', '--defaults', `organization=${args[1]}`], {
+      env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    if (configured.error || configured.status !== 0) {
+      process.stderr.write((configured.stderr || '').split(token).join('[REDACTED]'));
+      console.error('Could not set the default organization; the saved PAT was not changed.');
+      return configured.status || 1;
+    }
+    saveSettings(token, args[1]);
+    console.log('PAT and default organization saved for new sandbox shells and agent sessions. No login was performed.');
+    return 0;
+  }
+  const saved = readSettings();
+  let token = process.env.AZURE_DEVOPS_EXT_PAT ?? saved.pat;
   if (args[0] === '--pat-stdin') {
     args = args.slice(1);
     try { token = JSON.parse(fs.readFileSync(0, 'utf8')); }
@@ -29,14 +59,21 @@ function main(args) {
   })) {
     throw new Error('Debug and verbose output are disabled for PAT commands.');
   }
-  const organization = args.findIndex(arg => arg === '--organization' || arg === '--org');
-  if (organization < 0 || !args[organization + 1] || args[organization + 1].startsWith('-')) {
-    throw new Error('Supply --organization URL for this invocation; saved Azure defaults are not used.');
+  let organization = args.findIndex(arg => arg === '--organization' || arg === '--org'
+    || arg.startsWith('--organization=') || arg.startsWith('--org='));
+  if (organization < 0 && saved.organization) {
+    organization = args.length;
+    args.push('--organization', saved.organization);
+  }
+  const organizationValue = organization < 0 ? '' : (args[organization].includes('=') ? args[organization].slice(args[organization].indexOf('=') + 1) : args[organization + 1]);
+  if (!organizationValue || organizationValue.startsWith('-')) {
+    throw new Error('Supply --organization URL or run sandbox-tools setup azdo --persist.');
   }
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-azdo-'));
   try {
     const result = spawnSync('az', args, {
       env: { ...process.env, AZURE_DEVOPS_EXT_PAT: token, AZURE_CONFIG_DIR: directory,
+        AZURE_DEVOPS_EXT_CONFIG_DIR: path.join(directory, 'azuredevops'),
         AZURE_CORE_COLLECT_TELEMETRY: 'false', AZURE_LOGGING_ENABLE_LOG_FILE: 'false' },
       encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024,
     });

@@ -112,6 +112,9 @@ ENV HOME=/home/agent \
 # sshd resets the session environment. Set the tool paths for SSH commands too.
 COPY sshd_config /etc/ssh/sshd_config
 COPY agent-profile.sh /etc/profile.d/agent-tools.sh
+COPY azdo-env.sh /etc/profile.d/sandbox-azdo.sh
+COPY azdo-profile.ps1 /opt/microsoft/powershell/7/profile.ps1
+RUN printf '\n. /etc/profile.d/sandbox-azdo.sh\n' >> /etc/bash.bashrc
 COPY entrypoint.sh /usr/local/sbin/agent-entrypoint
 COPY smoke.sh /usr/local/bin/agent-smoke
 COPY agents.json /usr/local/lib/sandbox-agents/agents.json
@@ -122,14 +125,17 @@ COPY git-identity.sh /usr/local/lib/sandbox-agents/git-identity.sh
 COPY prepare-hermes-dashboard.py /usr/local/lib/sandbox-agents/prepare-hermes-dashboard.py
 COPY sandbox-agents /usr/local/bin/sandbox-agents
 COPY sandbox-agents /usr/local/bin/sandbox-tools
-COPY azdo.cjs /usr/local/bin/sandbox-azdo
+COPY azdo.cjs azdo-settings.cjs setup-azdo.sh /usr/local/lib/sandbox-agents/
+RUN ln -s /usr/local/lib/sandbox-agents/azdo.cjs /usr/local/bin/sandbox-azdo
 # Existing Windows checkouts may still contain CRLF after pulling attributes.
 RUN sed -i 's/\r$//' /etc/ssh/sshd_config /etc/profile.d/agent-tools.sh \
+       /etc/profile.d/sandbox-azdo.sh \
        /usr/local/sbin/agent-entrypoint /usr/local/bin/agent-smoke \
        /usr/local/bin/sandbox-agents /usr/local/bin/sandbox-tools \
        /usr/local/lib/sandbox-agents/git-identity.sh \
        /usr/local/lib/sandbox-agents/prepare-hermes-dashboard.py \
-       /usr/local/bin/sandbox-azdo \
+       /usr/local/lib/sandbox-agents/azdo.cjs \
+       /usr/local/lib/sandbox-agents/setup-azdo.sh \
     && chmod 0755 /usr/local/sbin/agent-entrypoint /usr/local/bin/agent-smoke /usr/local/bin/sandbox-agents /usr/local/bin/sandbox-tools /usr/local/bin/sandbox-azdo
 WORKDIR /workspace
 EXPOSE 2222

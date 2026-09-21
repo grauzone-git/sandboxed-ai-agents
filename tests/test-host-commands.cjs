@@ -72,7 +72,7 @@ else process.exit(1); // No image/container: stop before creation in positive pa
     ['tools', 'demo', 'login'], ['tools', 'demo', 'login', 'github', 'extra'],
     ['tools', 'demo', 'login', 'gh'], ['agents', 'demo', 'login', 'github'],
     ['tools', 'demo', 'setup'], ['tools', 'demo', 'setup', 'github'],
-    ['tools', 'demo', 'setup', 't3', 'extra'], ['agents', 'demo', 'setup', 't3'],
+    ['tools', 'demo', 'setup', 't3', 'extra'], ['tools', 'demo', 'setup', 'azdo', 'extra'], ['agents', 'demo', 'setup', 'azdo'], ['agents', 'demo', 'setup', 't3'],
     ['remove'], ['remove', 'demo', '--unknown'], ['remove', 'demo', '--volumes', '--volumes'], ['remove', 'demo', '--ssh-config', '--ssh-config'],
     ...Object.keys(catalog).map(id => [id]),
   ]) {
@@ -128,12 +128,14 @@ else process.exit(1); // No image/container: stop before creation in positive pa
       fs.unlinkSync(transportLog);
     }
   }
-  for (const exitCode of [0, 7]) {
-    assert.equal(cli(['tools', 'demo', 'setup', 't3'], { TEST_LOGIN_EXIT: String(exitCode) }).status, exitCode);
-    const calls = fs.readFileSync(transportLog, 'utf8').trim().split('\n').map(JSON.parse);
-    assert.deepEqual(calls.at(-1), { tool: 'podman', args: ['exec', '-i', '--user', '1000:1000', '--workdir', '/workspace', 'demo', '/usr/local/bin/sandbox-tools', 'setup', 't3'] });
-    assert.equal(calls.some(call => call.tool === 'ssh' || call.args.includes('init')), false);
-    fs.unlinkSync(transportLog);
+  for (const target of [['t3'], ['azdo'], ['azdo', '--persist'], ['azdo', '--clear']]) {
+    for (const exitCode of [0, 7]) {
+      assert.equal(cli(['tools', 'demo', 'setup', ...target], { TEST_LOGIN_EXIT: String(exitCode) }).status, exitCode);
+      const calls = fs.readFileSync(transportLog, 'utf8').trim().split('\n').map(JSON.parse);
+      assert.deepEqual(calls.at(-1), { tool: 'podman', args: ['exec', '-i', '--user', '1000:1000', '--workdir', '/workspace', 'demo', '/usr/local/bin/sandbox-tools', 'setup', ...target] });
+      assert.equal(calls.some(call => call.tool === 'ssh' || call.args.includes('init')), false);
+      fs.unlinkSync(transportLog);
+    }
   }
   for (const spec of ['codex', 'all', 'claude,codex']) {
     const result = cli(['up', 'demo', '--agents', spec]);

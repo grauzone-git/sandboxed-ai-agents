@@ -62,7 +62,7 @@ case "$action" in
             login|setup)
                 interactive=(-i)
                 [[ ! -t 0 || ! -t 1 ]] || interactive+=(-t)
-                exec podman exec "${interactive[@]}" --user 1000:1000 --workdir /workspace "$NAME" "/usr/local/bin/sandbox-$action" "$operation" "$3"
+                exec podman exec "${interactive[@]}" --user 1000:1000 --workdir /workspace "$NAME" "/usr/local/bin/sandbox-$action" "$operation" "${@:3}"
                 ;;
             list|check) "$manager_function" "$operation" ;;
             *) "$manager_function" "$operation" "$spec" ;;
