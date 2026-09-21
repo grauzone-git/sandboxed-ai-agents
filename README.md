@@ -60,6 +60,19 @@ cgroups v2. Add Bash, Python 3.9+, and the OpenSSH client tools. Run
 Never run `./sandbox` with `sudo`. Building the image and installing agents the
 first time needs internet access and several GB of disk.
 
+### Windows PowerShell
+
+The Windows toolset targets Windows 11 x64, PowerShell 7, Python 3.9+, and an
+already configured rootless WSL2 Podman 6.0+ machine. See the
+[Windows quick guide](docs/QUICKGUIDE-WINDOWS.md) for prerequisites, tested versions, build/create,
+SSH, lifecycle commands, transactional updates, and offline tests.
+
+```powershell
+.\sandbox.ps1 build
+.\sandbox.ps1 up agent01 --agents codex --ssh-config
+ssh agent01
+```
+
 ## Getting started
 
 Build the image once, then create a sandbox:
@@ -213,8 +226,12 @@ as `SANDBOX_IMAGE`, `SANDBOX_CPUS`, and `SANDBOX_MEMORY`.
 
 ## Documentation
 
+Start with the [Linux quick guide](docs/QUICKGUIDE-LINUX.md) or the
+[Windows quick guide](docs/QUICKGUIDE-WINDOWS.md).
+
 | If you want to | Read |
 |---|---|
+| Build and create sandboxes from Windows PowerShell | [Windows toolset](docs/QUICKGUIDE-WINDOWS.md) |
 | Connect, forward ports, stop, upgrade, or remove a sandbox | [Sandbox lifecycle and SSH](docs/SANDBOXES.md) |
 | Pick agents, sign in, pin versions, run dashboards | [Agents and tools](docs/AGENT-SETUP.md) |
 | Configure the image, .NET, npm, Playwright, Git, Azure | [Development toolchain](docs/TOOLCHAIN.md) |

@@ -1,5 +1,8 @@
 # Development toolchain
 
+Windows image builds and nested Podman use the existing container recipes.
+See the [Windows quick guide](QUICKGUIDE-WINDOWS.md) for host setup.
+
 [Back to the overview](../README.md) · [Agents and tools](AGENT-SETUP.md)
 
 The shared image carries Debian 12 slim, Node.js 24 with npm, .NET SDKs 9 and
@@ -291,3 +294,23 @@ Run these from the **host**, with SSH configured:
 installs an npm package, and launches headless Chromium, Firefox, and Edge if
 present. It needs network access and leaves caches behind, though the temporary
 projects are cleaned up. Edge is skipped when the image does not have it.
+
+
+## Windows image and nested-container notes
+
+The image recipes normalize CRLF inputs and Git attributes enforce LF for Linux
+entrypoints. If an older image fails with an `agent-entrypoint` missing-file
+error, rebuild it and recreate only the failed container while retaining its
+volumes. Changing global Git line-ending settings is unnecessary.
+
+On Windows, nested Podman requires usable `/dev/fuse`, `/dev/net/tun`, and at
+least 65536 subordinate UIDs and GIDs in the WSL2 machine. The launcher stages
+its seccomp policy under
+`~/.local/share/sandboxed-agents/<checkout-hash>/<profile-hash>.json` inside the
+machine. Do not delete these profiles while containers reference them. Inner
+images and volumes persist in sandbox home storage; runtime state is temporary.
+To check an enabled capability without SSH, run from PowerShell:
+
+```powershell
+podman exec --user 1000:1000 --workdir /workspace agent01 /usr/local/bin/sandbox-podman-check
+```

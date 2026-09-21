@@ -1,5 +1,9 @@
 # Sandbox lifecycle and SSH
 
+For PowerShell command examples, see the [Windows quick guide](QUICKGUIDE-WINDOWS.md).
+The storage, SSH, update, and removal behavior described here applies to both
+platforms; Linux examples use `./sandbox`.
+
 [Back to the overview](../README.md) · [Agents and tools](AGENT-SETUP.md)
 
 Everything here uses `agent01`, its workspace volume `agent01-workspace`, and
@@ -280,3 +284,19 @@ After deleting volumes, recreate the sandbox with `--ssh-config` to refresh the
 pinned server key, then sign into your agents again. Back up anything you need
 from the workspace and volumes first, and remember that home backups contain
 credentials.
+
+
+## Windows-specific behavior
+
+PowerShell shell/check commands use Podman exec and do not require host SSH.
+Managed SSH files use current-user-only ACLs, reject reparse points, and require
+UTF-8 SSH configuration (with or without a BOM). Repeated setup retains keys.
+Removal deletes only the exact generated Include and owned managed files;
+unrelated configuration is retained.
+
+An update cannot undo application writes to shared volumes. Each selected
+sandbox is a separate transaction, so earlier successful updates remain if a
+later one fails. If backup removal fails, the healthy replacement remains and
+the stopped backup is reported. If volume deletion fails during removal, the
+container and obsolete SSH setup may already be gone; retained volumes can be
+recovered explicitly with Podman.
