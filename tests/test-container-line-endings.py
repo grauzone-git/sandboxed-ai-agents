@@ -67,15 +67,18 @@ class ContainerLineEndingTests(unittest.TestCase):
                     if not line.startswith('COPY '):
                         continue
                     fields = shlex.split(line)
-                    if len(fields) != 3 or fields[0] != 'COPY' or fields[1].startswith('--'):
+                    if len(fields) < 3 or fields[1].startswith('--'):
                         continue
-                    source = PROJECT / 'src/container' / fields[1]
-                    content = source.read_bytes()
-                    target = root / fields[2].lstrip('/')
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    target.write_bytes(content.replace(b'\r\n', b'\n').replace(b'\n', b'\r\n'))
-                    if content.startswith(b'#!') or source.suffix == '.sh':
-                        scripts.append(target)
+                    for filename in fields[1:-1]:
+                        source = PROJECT / 'src/container' / filename
+                        content = source.read_bytes()
+                        target = root / fields[-1].lstrip('/')
+                        if fields[-1].endswith('/'):
+                            target /= source.name
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_bytes(content.replace(b'\r\n', b'\n').replace(b'\n', b'\r\n'))
+                        if content.startswith(b'#!') or source.suffix == '.sh':
+                            scripts.append(target)
                 command = shlex.split(normalization)
                 command = [str(root / arg.lstrip('/')) if arg.startswith('/') else arg for arg in command]
                 subprocess.run(command, check=True)
