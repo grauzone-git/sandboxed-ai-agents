@@ -11,8 +11,13 @@ try {
   fs.writeFileSync(path.join(fixture, 'az'), `#!/usr/bin/env node
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+if (process.argv[3] === 'configure') {
+  assert.deepEqual(process.argv.slice(2), ['devops', 'configure', '--defaults', 'organization=https://dev.azure.com/contoso']);
+  assert.equal(process.env.AZURE_DEVOPS_EXT_PAT, undefined);
+  process.exit(0);
+}
 assert.equal(process.env.AZURE_DEVOPS_EXT_PAT, ${JSON.stringify(token)});
-assert.deepEqual(process.argv.slice(2), ['repos', 'list', '--organization', 'https://dev.azure.com/contoso', '--project', 'Project with spaces']);
+assert.deepEqual(process.argv.slice(2).sort(), ['repos', 'list', '--organization', 'https://dev.azure.com/contoso', '--project', 'Project with spaces'].sort());
 assert.notEqual(process.env.AZURE_CONFIG_DIR, process.env.HOME + '/.azure');
 assert.equal(process.env.AZURE_LOGGING_ENABLE_LOG_FILE, 'false');
 assert.equal(process.env.AZURE_CORE_COLLECT_TELEMETRY, 'false');
@@ -33,6 +38,35 @@ if (process.env.TEST_AZ_ERROR) {
   assert.equal(result.stdout, 'projects: []\n');
   assert.equal(fs.existsSync(fs.readFileSync(path.join(fixture, 'config-path'), 'utf8')), false);
   assert.equal(fs.existsSync(path.join(fixture, '.azure')), false);
+  const savedToken = 'dummy-saved-$();`literal`" token';
+  const savedEnv = { ...process.env, HOME: fixture, PATH: `${fixture}:${process.env.PATH}` };
+  delete savedEnv.AZURE_DEVOPS_EXT_PAT;
+  const save = spawnSync(process.execPath, [helper, '--save-pat', 'https://dev.azure.com/contoso'], {
+    env: savedEnv, input: savedToken, encoding: 'utf8',
+  });
+  assert.equal(save.status, 0, save.stderr);
+  assert.equal((save.stdout + save.stderr).includes(savedToken), false);
+  const patFile = path.join(fixture, '.config/sandbox-azdo/environment');
+  assert.equal(fs.statSync(patFile).mode & 0o777, 0o600);
+  assert.equal(fs.statSync(path.dirname(patFile)).mode & 0o777, 0o700);
+  const originalFake = fs.readFileSync(path.join(fixture, 'az'), 'utf8');
+  fs.writeFileSync(path.join(fixture, 'az'), originalFake.replace(JSON.stringify(token), JSON.stringify(savedToken)));
+  const savedRun = run({ env: savedEnv });
+  assert.equal(savedRun.status, 0, savedRun.stderr);
+  const profile = path.resolve(__dirname, '../src/container/azdo-env.sh');
+  const shell = spawnSync('bash', ['--noprofile', '--norc', '-c', '. "$1"; test "${AZURE_DEVOPS_EXT_PAT+x}" = x || exit 90; exec "$2" "$3" repos list --project "Project with spaces"', 'bash', profile, process.execPath, helper], {
+    env: savedEnv, encoding: 'utf8',
+  });
+  assert.equal(shell.status, 0, shell.stderr);
+  const powershell = spawnSync('pwsh', ['-NoLogo', '-NoProfile', '-Command',
+    '. $env:TEST_PROFILE; if ($env:AZURE_DEVOPS_EXT_PAT -cne $env:TEST_EXPECTED_PAT) { exit 9 }'], {
+    env: { ...savedEnv, TEST_PROFILE: path.resolve(__dirname, '../src/container/azdo-profile.ps1'), TEST_EXPECTED_PAT: savedToken },
+    encoding: 'utf8',
+  });
+  if (powershell.error?.code === 'ENOENT') console.log('PowerShell profile check skipped: pwsh is not installed.');
+  else assert.equal(powershell.status, 0, powershell.stderr);
+  fs.writeFileSync(path.join(fixture, 'az'), originalFake);
+  assert.equal(spawnSync(process.execPath, [helper, '--clear-pat'], { env: savedEnv }).status, 0);
   const failure = run({ env: { ...process.env, HOME: fixture, PATH: `${fixture}:${process.env.PATH}`, AZURE_DEVOPS_EXT_PAT: token, TEST_AZ_ERROR: '1' } });
   assert.equal(failure.status, 23);
   assert.match(failure.stderr, /TF400813/);

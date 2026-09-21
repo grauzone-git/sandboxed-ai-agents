@@ -97,6 +97,26 @@ async function test() {
   assert.equal(calls.length, 0);
   assert.equal(fs.existsSync(path.join(hermesDir, 'dashboard.json')), false);
   const tools = createManager({ isTools: true, home: agentHome, ...processes });
+  const savedAzdo = path.join(agentHome, '.config/sandbox-azdo/environment');
+  write(savedAzdo, 'dummy-manager-pat\nhttps://dev.azure.com/contoso\n');
+  const configuredTools = createManager({ isTools: true, home: agentHome, ...processes });
+  for (const flags of [[], ['--persist'], ['--clear']]) {
+    calls.length = 0;
+    await configuredTools.setup('azdo', ...flags);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].command, '/bin/bash');
+    assert.deepEqual(calls[0].args, ['/usr/local/lib/sandbox-agents/setup-azdo.sh', ...flags]);
+    assert.equal(calls[0].options.env.AZURE_DEVOPS_EXT_PAT, 'dummy-manager-pat');
+    assert.equal(calls[0].options.stdio, 'inherit');
+  }
+  fs.unlinkSync(savedAzdo);
+  const clearedTools = createManager({ isTools: true, home: agentHome, ...processes });
+  calls.length = 0;
+  await clearedTools.setup('azdo');
+  assert.equal(calls[0].options.env.AZURE_DEVOPS_EXT_PAT, process.env.AZURE_DEVOPS_EXT_PAT);
+  await assert.rejects(tools.setup('azdo', '--unknown'), /Usage/);
+  await assert.rejects(agents.setup('azdo'), /Usage/);
+  calls.length = 0;
   await assert.rejects(tools.login('codex'), /Usage: sandbox-tools login github/);
   await assert.rejects(tools.login('opencode'), /Usage: sandbox-tools login github/);
   await assert.rejects(tools.login('copilot'), /Usage: sandbox-tools login github/);

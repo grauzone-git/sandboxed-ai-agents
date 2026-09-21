@@ -212,6 +212,7 @@ report a vulnerability.
 ./sandbox tools NAME login github             # GitHub login and Git commit identity
 ./sandbox azdo NAME --pat-env -- devops project list --organization URL
 ./sandbox tools NAME setup t3                 # T3 Connect sign-in and activation
+./sandbox tools NAME setup azdo [--persist|--clear] # PAT and default organization
 ./sandbox run NAME AGENT [args...]          # one-off command
 ./sandbox tool NAME TOOL [args...]          # one-off tool command
 ./sandbox copilot|claude|codex|hermes|opencode|deepseek|t3 NAME   # persistent terminal
@@ -226,7 +227,7 @@ Run `./sandbox --help` for the full syntax, including environment variables such
 as `SANDBOX_IMAGE`, `SANDBOX_CPUS`, and `SANDBOX_MEMORY`.
 
 Azure DevOps PAT commands and Windows PowerShell through WSL are described in
-the [PAT workflow](docs/TOOLCHAIN.md#azure-devops-with-an-environment-pat).
+the [setup and PAT workflow](docs/TOOLCHAIN.md#set-up-azure-devops).
 
 ## Documentation
 

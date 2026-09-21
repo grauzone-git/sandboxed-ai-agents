@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const childProcess = require('node:child_process');
+const { readSettings } = require('./azdo-settings.cjs');
 
 function createManager({
   isTools = false,
@@ -30,6 +31,8 @@ function createManager({
     PLAYWRIGHT_BROWSERS_PATH: path.join(home, '.cache/ms-playwright'),
     DISABLE_AUTOUPDATER: '1',
   };
+  const savedPat = readSettings(home).pat;
+  if (env.AZURE_DEVOPS_EXT_PAT === undefined && savedPat) env.AZURE_DEVOPS_EXT_PAT = savedPat;
   const tmuxArgs = ['-L', manager];
   const fail = message => { throw new Error(message); };
   function run(command, args = [], options = {}) {
@@ -249,6 +252,10 @@ function createManager({
     run('tmux', ['-L', `sandbox-${kind}-terminals`, 'new-session', '-A', '-s', id === 'deepseek' ? 'deepseek-cli' : id, '-c', '/workspace', ...command]);
   }
   async function setup(id, ...extra) {
+    if (isTools && id === 'azdo' && (extra.length === 0 || (extra.length === 1 && ['--persist', '--clear'].includes(extra[0])))) {
+      return waitForChild(spawn('/bin/bash', ['/usr/local/lib/sandbox-agents/setup-azdo.sh', ...extra], { env, stdio: 'inherit' }));
+    }
+    if (id === 'azdo') fail('Usage: sandbox-tools setup azdo [--persist|--clear]');
     if (!isTools || id !== 't3' || extra.length) fail('Usage: sandbox-tools setup t3');
     requireEnabled(id);
     console.log(entry(id).setupMessage);

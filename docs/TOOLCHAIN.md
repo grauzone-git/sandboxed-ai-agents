@@ -280,6 +280,85 @@ from [Microsoft's Debian package repository](https://learn.microsoft.com/en-us/p
 The package installation targets amd64; ARM64 needs a separate PowerShell
 installation recipe and has not been validated.
 
+#### Set up Azure DevOps
+
+On the host, choose how the sandbox should keep the PAT:
+
+```bash
+# Native Azure DevOps credential storage, using az devops login:
+./sandbox tools agent01 setup azdo
+
+# Persist AZURE_DEVOPS_EXT_PAT for new sandbox shells and agents instead:
+./sandbox tools agent01 setup azdo --persist
+```
+
+Both modes ask for the default organization URL, for example
+`https://dev.azure.com/contoso`. Normal setup then runs the native
+`az devops login` PAT prompt and sets the default organization. It does not run
+`az login`. Credentials stay in the sandbox's Azure CLI credential store
+(typically `~/.azure/azuredevops/personalAccessTokens` when no keyring is
+available). A successful native setup removes a previously saved environment
+PAT so new sessions use native credential storage.
+
+With `--persist`, the helper asks for a PAT with input hidden and saves it as
+sandbox environment settings. It never calls either login command and does not
+validate the PAT online. It only runs `az devops configure` to set the default
+organization. Re-run the same command to replace the PAT and organization.
+Empty input or cancellation preserves the previous PAT.
+
+Persistent environment settings are plaintext in
+`~/.config/sandbox-azdo/environment`, in the named home volume. The directory
+has mode `0700` and the file has mode `0600`. Its first line contains the PAT;
+the second contains the organization. This is data, not a script. Never copy
+it into a repository. All agents sharing the sandbox user can read it.
+
+New Bash login/interactive shells and PowerShell sessions with profiles enabled
+load the saved PAT as `AZURE_DEVOPS_EXT_PAT`. The agent manager also loads it
+for commands it launches, and `sandbox-azdo` reads it directly. An environment
+variable explicitly supplied by the caller takes precedence. This is an
+environment variable for the sandbox user, not Podman's container-wide
+configuration or a host system variable. Arbitrary `podman exec` processes
+that bypass these startup paths do not automatically load it.
+
+Inside the sandbox after persistent setup, run:
+
+```bash
+sandbox-azdo devops project list
+# Native CLI also uses the exported PAT and configured default organization:
+az devops project list
+```
+
+`sandbox-azdo` uses the saved organization when `--organization` is omitted and
+isolates the operation from Azure login state. Native `az` uses its usual
+configuration and authentication precedence. Configure an optional default
+project with `az devops configure --defaults project='My Project'`, or pass
+`--project` explicitly to operations that support it. The isolated
+`sandbox-azdo` command needs an explicit `--project`.
+
+Remove the saved environment PAT from the host with:
+
+```bash
+./sandbox tools agent01 setup azdo --clear
+```
+
+This removes the environment file, including the helper's saved organization.
+It leaves the native CLI's non-secret default organization and any native
+credentials intact. For native credential removal, run inside the sandbox:
+`az devops logout --organization https://dev.azure.com/contoso`.
+
+Replacement and removal cannot change environments already inherited by running
+processes. Close and reopen shells; restart agents, services and their tmux
+servers as needed. In a retained shell, also run `unset AZURE_DEVOPS_EXT_PAT`
+(Bash) or `Remove-Item Env:AZURE_DEVOPS_EXT_PAT` (PowerShell). A sandbox restart
+clears all running processes while retaining the chosen persisted settings.
+
+Windows PowerShell uses the same setup command through WSL; the PAT is entered
+at the sandbox prompt, not on the command line:
+
+```powershell
+wsl.exe --distribution Ubuntu --cd /home/me/sandboxed-ai-agents --exec ./sandbox tools agent01 setup azdo --persist
+```
+
 #### Azure DevOps with an environment PAT
 
 `AZURE_DEVOPS_EXT_PAT` authenticates Azure DevOps commands without `az login`,
@@ -293,11 +372,13 @@ sandbox-azdo devops project list --organization https://dev.azure.com/contoso
 sandbox-azdo repos list --organization https://dev.azure.com/contoso --project 'My Project'
 ```
 
-The helper fails immediately on a missing or empty variable. It runs the `az`
+The helper fails if neither an environment PAT nor a saved PAT is available.
+An explicitly empty variable also fails. It runs the `az`
 operation with the supplied PAT and a fresh temporary Azure configuration, so
 saved Azure logins cannot take precedence. Pass `--organization` (or `--org`)
-on each invocation and `--project` where the operation supports it. Saved
-organization/project defaults are intentionally not read or changed.
+on each invocation unless persistent setup supplied an organization, and
+`--project` where the operation supports it. Native Azure configuration defaults
+are not read by the isolated helper.
 
 To enter a PAT without putting its value in Bash history, inside the sandbox:
 
@@ -384,11 +465,13 @@ by newly started children until you unset it or close the shell. Unsetting it
 does not erase copies already inherited by running agents; stop those processes
 to remove their access.
 
-There is no persistence option. The helper creates a private temporary Azure
+Without `setup azdo --persist`, the environment workflow does not save the PAT.
+For operations, the helper creates a private temporary Azure
 configuration under `/tmp`, disables Azure file logging and telemetry, and
 removes that directory on normal completion, including native CLI failure.
-It never writes the PAT to a credential file, profile, image, label, or container
-configuration. A forced kill can leave temporary Azure configuration behind;
+The operation never writes the PAT to a credential file, profile, image, label,
+or container configuration. Only explicit persistent setup writes the private
+environment settings file described above. A forced kill can leave temporary Azure configuration behind;
 no PAT is deliberately stored there. Do not put the PAT in source files,
 shell profiles, transcripts, tracing output, or persistent environment settings.
 Revoking a PAT in Azure DevOps is how to invalidate copies already in use.
@@ -401,7 +484,8 @@ the scope required by the operation when Azure rejects a request. No fallback
 login is attempted.
 
 Offline tests use dummy PATs and fake Podman/Azure CLI executables. They cover
-explicit opt-in, missing values, literal transport, isolation and native errors.
+explicit opt-in, missing values, literal transport, isolation, native errors,
+setup modes, replacement, cleanup and startup environment loading.
 Live validation is separate and pending: after rebuilding, run the read-only
 `devops project list` example against an organization you can access from Linux
 and Windows/WSL, then repeat with an expired or revoked test PAT. Record only the

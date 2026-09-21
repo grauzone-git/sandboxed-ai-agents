@@ -18,6 +18,7 @@ Usage:
   ./sandbox tools NAME set|enable|disable|update LIST
   ./sandbox tools NAME login github
   ./sandbox tools NAME setup t3
+  ./sandbox tools NAME setup azdo [--persist|--clear]
   ./sandbox tool NAME TOOL [arguments...]
   ./sandbox run NAME AGENT [arguments...]
   ./sandbox azdo NAME --pat-env -- devops COMMAND --organization URL [--project PROJECT]
@@ -42,10 +43,15 @@ Existing sandboxes can use 'agents NAME set none' to disable every agent.
 Agent login requires an enabled agent: Codex/Copilot device code, Claude browser/code login,
 or OpenCode/Hermes interactive provider setup.
 GitHub login uses the built-in gh CLI and configures Git HTTPS credentials.
-Azure DevOps requires explicit --pat-env and a nonempty AZURE_DEVOPS_EXT_PAT.
+Azure DevOps setup uses native az devops login unless --persist is supplied.
+With --persist, save the PAT as AZURE_DEVOPS_EXT_PAT for new sandbox sessions,
+without either login command. Both modes set the default organization.
+Setup --clear removes the saved environment PAT; restart existing sessions.
+One-off Azure DevOps commands require explicit --pat-env and a nonempty AZURE_DEVOPS_EXT_PAT.
 The PAT travels over stdin, is never saved, and is unavailable to later sessions.
 Use devops, boards, repos, pipelines or artifacts commands with --organization URL.
-PAT commands do not use saved defaults or support login, configure, debug or verbose.
+PAT commands use the organization from persistent setup when no URL is supplied.
+They ignore native Azure defaults and reject login, configure, debug and verbose.
 After login, enter a Git user name and email to save globally in the sandbox home.
 T3 starts headless; its terminal command follows logs. DeepSeek opens a CLI shell.
 T3 Connect setup requires enabled T3 and restarts its managed server after sign-in.
@@ -155,7 +161,8 @@ parse_cli_args() {
     case "$action" in
         agents|tools)
             if [[ ${2:-} == setup ]]; then
-                [[ $action == tools && $# -eq 3 && $3 == t3 ]] || fail 'Usage: ./sandbox tools NAME setup t3.'
+                [[ $action == tools && ( ( $# -eq 3 && ( $3 == t3 || $3 == azdo ) ) || ( $# -eq 4 && $3 == azdo && ( $4 == --persist || $4 == --clear ) ) ) ]] \
+                    || fail 'Usage: ./sandbox tools NAME setup t3, or setup azdo [--persist|--clear].'
             fi
             if [[ ${2:-} == login ]]; then
                 if [[ $action == tools ]]; then
