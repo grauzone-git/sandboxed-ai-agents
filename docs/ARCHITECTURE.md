@@ -1,5 +1,12 @@
 # Architecture and desktop control
 
+The [Windows PowerShell toolset](QUICKGUIDE-WINDOWS.md) reuses Python selection, container
+argument, and seccomp policies through a thin PowerShell launcher. Windows
+paths, WSL2 preflight, and SSH ACLs have dedicated host adapters; Linux ownership
+labels remain unchanged. Windows ownership labels use the resolved, normalized
+native checkout path, not the WSL bind source. Updates translate `/mnt/c/...`
+binds back to guarded local paths; custom WSL automount roots are unsupported.
+
 [Back to the overview](../README.md) · [Sandbox lifecycle and SSH](SANDBOXES.md)
 
 ## One sandbox per workspace
