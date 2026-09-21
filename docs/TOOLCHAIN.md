@@ -298,8 +298,12 @@ projects are cleaned up. Edge is skipped when the image does not have it.
 
 ## Windows image and nested-container notes
 
-The image recipes normalize CRLF inputs and Git attributes enforce LF for Linux
-entrypoints. If an older image fails with an `agent-entrypoint` missing-file
+Git attributes keep detected text files, including PowerShell scripts, in LF
+format on Linux and Windows while leaving binary files unchanged. Existing
+working files are not rewritten when the attributes change; configure your
+editor to save with LF to avoid conversion warnings when editing older CRLF
+files. The image recipes also normalize CRLF inputs.
+If an older image fails with an `agent-entrypoint` missing-file
 error, rebuild it and recreate only the failed container while retaining its
 volumes. Changing global Git line-ending settings is unnecessary.
 

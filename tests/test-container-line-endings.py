@@ -18,10 +18,17 @@ class ContainerLineEndingTests(unittest.TestCase):
             repository.mkdir()
             subprocess.run(['git', 'init', '-q', str(repository)], check=True)
             shutil.copytree(PROJECT / 'src/container', repository / 'src/container')
+            for filename in ('sandbox.ps1', 'README.md', 'src/host/windows_cli.py'):
+                target = repository / filename
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(PROJECT / filename, target)
             attributes = PROJECT / '.gitattributes'
             if attributes.exists():
                 shutil.copy2(attributes, repository / '.gitattributes')
-            subprocess.run(['git', '-C', str(repository), '-c', 'core.autocrlf=false', 'add', '.'], check=True)
+            # Older checkouts may supply CRLF fixtures; their normalization is
+            # intentional here, not a warning about the user's working tree.
+            subprocess.run(['git', '-C', str(repository), '-c', 'core.autocrlf=false',
+                            '-c', 'core.safecrlf=false', 'add', '.'], check=True)
             checkout = root / 'windows-checkout'
             subprocess.run(['git', '-C', str(repository), '-c', 'core.autocrlf=true',
                             'checkout-index', '--all', '--force', f'--prefix={checkout.as_posix()}/'], check=True)
@@ -30,6 +37,9 @@ class ContainerLineEndingTests(unittest.TestCase):
                 content = (checkout / 'src/container' / filename).read_bytes()
                 with self.subTest(file=filename):
                     self.assertFalse(b'\r\n' in content, f'{filename}: Windows checkout corrupts the Linux script interpreter')
+            for filename in ('sandbox.ps1', 'README.md', 'src/host/windows_cli.py'):
+                with self.subTest(file=filename):
+                    self.assertNotIn(b'\r\n', (checkout / filename).read_bytes())
             if os.name != 'nt':
                 # Run only the checked-out interpreter line, never the privileged
                 # entrypoint body. This exercises Linux exec's missing-interpreter failure.
