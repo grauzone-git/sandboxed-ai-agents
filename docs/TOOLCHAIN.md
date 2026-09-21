@@ -431,8 +431,9 @@ stream inside the sandbox).
 
 On Windows, use Windows PowerShell or PowerShell 7 with WSL. Create and manage
 the sandbox using the Linux launcher and rootless Podman in that WSL distro.
-There is no native Windows launcher. With the PAT already in the Windows
-PowerShell process environment, temporarily opt it into WSL forwarding:
+The native Windows launcher does not yet expose these Azure DevOps operations;
+this workflow uses the Linux launcher through WSL. With the PAT already in the
+Windows PowerShell process environment, temporarily opt it into WSL forwarding:
 
 ```powershell
 if ([string]::IsNullOrEmpty($env:AZURE_DEVOPS_EXT_PAT)) {
