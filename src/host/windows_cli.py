@@ -1,4 +1,4 @@
-"""PowerShell-facing build and creation orchestration using shared host policies."""
+"""Dispatch PowerShell sandbox operations through shared ownership and storage policies."""
 import importlib.util
 import math
 import os
@@ -15,6 +15,9 @@ from windows_capabilities import prepare_nested
 from windows_paths import checkout_identity, workspace_path
 from windows_runtime import NativeError, Runtime
 from windows_ssh import SshSetup
+import windows_lifecycle
+import windows_update
+import update
 
 PROJECT = Path(__file__).resolve().parents[2]
 HELP = '''Usage:
@@ -22,10 +25,20 @@ HELP = '''Usage:
   ./sandbox.ps1 up NAME [WORKSPACE] --agents LIST [--tools LIST] [--ssh-port PORT]
                    [--capabilities podman|none] [--ssh-config] [--cpus N] [--memory SIZE]
   ./sandbox.ps1 ssh-config NAME --install
+  ./sandbox.ps1 start|restart NAME [--ssh-config]
+  ./sandbox.ps1 stop|shell|check|check-full|fingerprint NAME
+  ./sandbox.ps1 remove NAME [--volumes]
+  ./sandbox.ps1 update NAME...|--all [--no-build] [--capabilities podman|none]
 
 Requires Windows 11 x64, PowerShell 7, Python 3.9+, and rootless WSL2 Podman 6.0+.
 Set SANDBOX_IMAGE, SANDBOX_CPUS, SANDBOX_MEMORY, or SANDBOX_PYTHON as needed.
 Quote comma-separated selections in PowerShell: --agents 'codex,claude'.
+Start/restart touch host SSH files only with --ssh-config.
+Remove always cleans managed SSH setup; --volumes also deletes owned named data.
+Host workspace directories are always retained. Update preserves storage, SSH,
+resources, selections, capabilities, and running/stopped state; failed replacement
+rolls back without deleting volumes. --no-build reuses the base image; optional
+capability layers may still build. Shell/check use Podman exec without host SSH.
 '''
 
 
@@ -180,16 +193,27 @@ def main(args, *, runner=subprocess.run):
         if not args or args[0] in ('help', '--help', '-h'):
             print(HELP)
             return 0
-        if args[0] not in ('build', 'up', 'ssh-config'):
+        if args[0] not in ('build', 'up', 'ssh-config', 'update', *windows_lifecycle.COMMANDS):
             raise ValueError('Unknown command. Run ./sandbox.ps1 --help.')
+        update_options = update.parse_args(args[1:], prog='./sandbox.ps1 update') if args[0] == 'update' else None
+        if update_options is not None:
+            for name in update_options.names:
+                validate_name(name)
         options = parse_up(args[1:]) if args[0] == 'up' else None
         if args[0] == 'ssh-config':
             if len(args) != 3 or args[2] != '--install':
                 raise ValueError('Use ssh-config NAME --install.')
             validate_name(args[1])
+        lifecycle = windows_lifecycle.parse(args[0], args[1:], validate_name) if args[0] in windows_lifecycle.COMMANDS else None
         project = checkout_identity(PROJECT)
         runtime = Runtime(runner)
         runtime.preflight()
+        if update_options is not None:
+            windows_update.run(runtime, PROJECT, project, update_options)
+            return 0
+        if lifecycle is not None:
+            windows_lifecycle.execute(runtime, project, args[0], *lifecycle, wait_ready)
+            return 0
         if args[0] == 'ssh-config':
             ssh = SshSetup(runtime, project, args[1])
             ssh.install()
@@ -202,6 +226,11 @@ def main(args, *, runner=subprocess.run):
         runtime.run('build', '--pull=always', '-t', os.environ.get('SANDBOX_IMAGE', 'localhost/agent-sandbox:dev'),
                     '-f', context / 'Containerfile', *args[1:], context, capture=False)
         return 0
+    except SystemExit as error:
+        return error.code
+    except KeyboardInterrupt:
+        print("Error: Operation interrupted; inspect retained containers before retrying.", file=sys.stderr)
+        return 130
     except NativeError as error:
         print(f'Error: {error}', file=sys.stderr)
         return error.returncode

@@ -2,7 +2,7 @@
 # Sourced by cli.sh; these globals are shared with the command modules.
 usage() {
     cat <<'USAGE'
-Windows build/create/SSH: use ./sandbox.ps1; see docs/WINDOWS.md.
+Windows build/create/SSH/lifecycle/update: use ./sandbox.ps1; see docs/WINDOWS.md.
 
 Usage:
   ./sandbox build [additional podman build arguments]
