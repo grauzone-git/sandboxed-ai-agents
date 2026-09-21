@@ -16,6 +16,7 @@ from windows_paths import checkout_identity, workspace_path
 from windows_runtime import NativeError, Runtime
 from windows_ssh import SshSetup
 import windows_lifecycle
+import windows_commands
 import windows_update
 import update
 
@@ -24,6 +25,16 @@ HELP = '''Usage:
   ./sandbox.ps1 build [additional podman build arguments]
   ./sandbox.ps1 up NAME [WORKSPACE] --agents LIST [--tools LIST] [--ssh-port PORT]
                    [--capabilities podman|none] [--ssh-config] [--cpus N] [--memory SIZE]
+  ./sandbox.ps1 agents|tools NAME [list|check]
+  ./sandbox.ps1 agents|tools NAME set|enable|disable|update LIST
+  ./sandbox.ps1 agents NAME login codex|claude|opencode|copilot|hermes
+  ./sandbox.ps1 tools NAME login github
+  ./sandbox.ps1 tools NAME setup t3
+  ./sandbox.ps1 run NAME AGENT [arguments...]
+  ./sandbox.ps1 tool NAME TOOL [arguments...]
+  ./sandbox.ps1 copilot|claude|codex|hermes|opencode|t3|deepseek NAME
+  ./sandbox.ps1 service NAME t3|hermes-dashboard|deepseek-ui|tokentracker [status|start|stop|restart|logs]
+  ./sandbox.ps1 forward NAME t3|hermes-dashboard|deepseek-ui|tokentracker [LOCAL_PORT]
   ./sandbox.ps1 ssh-config NAME --install
   ./sandbox.ps1 start|restart NAME [--ssh-config]
   ./sandbox.ps1 stop|shell|check|check-full|fingerprint NAME
@@ -38,7 +49,12 @@ Remove always cleans managed SSH setup; --volumes also deletes owned named data.
 Host workspace directories are always retained. Update preserves storage, SSH,
 resources, selections, capabilities, and running/stopped state; failed replacement
 rolls back without deleting volumes. --no-build reuses the base image; optional
-capability layers may still build. Shell/check use Podman exec without host SSH.
+capability layers may still build. Shell/check and agent/tool commands use
+Podman exec without host SSH. Agent/tool login, setup, runs and sessions retain
+interactive input. Update all means all enabled agents/tools; set none disables
+selection but retains cached installations. Service/forward aliases: hermes and
+deepseek. Forwarding starts the selected service and requires existing managed
+SSH setup; it binds only localhost and never installs host SSH automatically.
 '''
 
 
@@ -193,7 +209,7 @@ def main(args, *, runner=subprocess.run):
         if not args or args[0] in ('help', '--help', '-h'):
             print(HELP)
             return 0
-        if args[0] not in ('build', 'up', 'ssh-config', 'update', *windows_lifecycle.COMMANDS):
+        if args[0] not in ('build', 'up', 'ssh-config', 'update', *windows_lifecycle.COMMANDS, *windows_commands.COMMANDS):
             raise ValueError('Unknown command. Run ./sandbox.ps1 --help.')
         update_options = update.parse_args(args[1:], prog='./sandbox.ps1 update') if args[0] == 'update' else None
         if update_options is not None:
@@ -204,10 +220,14 @@ def main(args, *, runner=subprocess.run):
             if len(args) != 3 or args[2] != '--install':
                 raise ValueError('Use ssh-config NAME --install.')
             validate_name(args[1])
+        command = windows_commands.parse(args[0], args[1:], PROJECT, validate_name, selections) if args[0] in windows_commands.COMMANDS else None
         lifecycle = windows_lifecycle.parse(args[0], args[1:], validate_name) if args[0] in windows_lifecycle.COMMANDS else None
         project = checkout_identity(PROJECT)
         runtime = Runtime(runner)
         runtime.preflight()
+        if command is not None:
+            windows_commands.execute(runtime, project, command)
+            return 0
         if update_options is not None:
             windows_update.run(runtime, PROJECT, project, update_options)
             return 0

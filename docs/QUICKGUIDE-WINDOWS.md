@@ -40,18 +40,13 @@ and port for another sandbox, for example `agent02 --ssh-port 2223`.
 ## Sign in and work
 
 ```powershell
-ssh agent01
+.\sandbox.ps1 agents agent01 login copilot
+.\sandbox.ps1 copilot agent01
 ```
 
-Then, inside the sandbox:
-
-```bash
-sandbox-agents login copilot
-sandbox-agents session copilot
-```
-
-Detach from the persistent terminal with `Ctrl+B`, then `D`; run `exit` to leave
-the SSH shell. Credentials stay in the sandbox home volume. In VS Code, connect
+Detach from the persistent terminal with `Ctrl+B`, then `D`. These commands use
+Podman exec; host SSH setup is optional. Credentials stay in the sandbox home
+volume. For SSH access, run `ssh agent01`. In VS Code, connect
 to `agent01` with Remote - SSH and open `/workspace`. Use the managed alias;
 root login is disabled.
 
@@ -64,6 +59,10 @@ root login is disabled.
 | Shell without host SSH setup | `.\sandbox.ps1 shell agent01` |
 | Add SSH to a running sandbox | `.\sandbox.ps1 ssh-config agent01 --install` |
 | Check toolchain and mounts | `.\sandbox.ps1 check agent01` |
+| List agents / tools | `.\sandbox.ps1 agents agent01 list` / `.\sandbox.ps1 tools agent01 list` |
+| Enable T3 | `.\sandbox.ps1 tools agent01 enable t3` |
+| Check / restart T3 | `.\sandbox.ps1 service agent01 t3 status` / `.\sandbox.ps1 service agent01 t3 restart` |
+| Forward T3 to localhost | `.\sandbox.ps1 forward agent01 t3` |
 | Show pinned host-key fingerprint | `.\sandbox.ps1 fingerprint agent01` |
 | Rebuild and update | `.\sandbox.ps1 update agent01` |
 | Apply an already built image | `.\sandbox.ps1 update agent01 --no-build` |
@@ -74,10 +73,45 @@ do not change host SSH files; add `--ssh-config` to request setup.
 
 At creation, use `--agents 'codex,claude'` for multiple agents, `--tools t3` for
 an optional tool, `--cpus 2 --memory 6g` for resource limits, or
-`--capabilities podman` for nested containers. Run `sandbox-agents` and
-`sandbox-tools` commands inside the sandbox to manage installed selections.
+`--capabilities podman` for nested containers.
 See the [toolchain guide](TOOLCHAIN.md#nested-containers-with-podman) for capability
 security settings and details.
+
+## Manage agents and tools
+
+Both `agents` and `tools` support `list` (the default), `check`, and
+`set|enable|disable|update LIST`. Quote comma-separated lists in PowerShell:
+
+```powershell
+.\sandbox.ps1 agents agent01 enable 'codex,claude'
+.\sandbox.ps1 agents agent01 update all
+.\sandbox.ps1 tools agent01 set t3
+.\sandbox.ps1 tools agent01 setup t3
+.\sandbox.ps1 tools agent01 login github
+.\sandbox.ps1 run agent01 codex --help
+.\sandbox.ps1 tool agent01 t3 --help
+```
+
+`update all` updates only enabled entries. `set none` disables the selection,
+retaining cached installs and credentials. Login supports Codex, Claude,
+OpenCode, Copilot, and Hermes; GitHub login and T3 setup use `tools`. Login/setup
+can prompt for authorization. Agent aliases and `t3` reconnect persistent
+sessions; `run`/`tool` pass additional arguments to the selected executable.
+
+Non-interactive output supports PowerShell assignment and pipelines, for example
+`$listing = .\sandbox.ps1 agents agent01 list`. Native stderr is displayed as
+plain text and remains redirectable with `2>` or `2>&1`. Installers also send
+progress there; check `$LASTEXITCODE` for command success. Shells, sessions, `run`/`tool`, and
+login/setup keep direct console input and output for interactive programs.
+
+Service actions are `status`, `start`, `stop`, `restart`, and `logs`. Forwarding
+starts the selected enabled service and requires existing managed SSH setup.
+Leave its terminal running and open the printed localhost URL. An optional
+port overrides the local port: `.\sandbox.ps1 forward agent01 t3 4773`.
+An unavailable local port is rejected before starting the service or SSH tunnel.
+Service/forward aliases `hermes` and `deepseek` select their dashboard tools.
+These added host command routes have offline coverage; live Windows results
+are tracked in [issue #16](https://github.com/grauzone-git/sandboxed-ai-agents/issues/16).
 
 ## Remove
 
@@ -108,6 +142,16 @@ $testPython = py -3 -c "import sys; print(sys.executable)"
 Tests use temporary homes and simulated Podman responses, without touching
 running sandboxes. Linux-only permission and image-normalization tests skip
 on Windows. Windows Developer Mode may be needed for symlink tests.
+The probe fixture execution test also skips if Node is absent on the host;
+the live argument check uses Node already included in the container image.
+
+For an optional live argument-transport check with an already built image, run
+`py -3 -B tests/live-windows-arguments.py`. This creates a separate container
+with no network, mounts, or published ports. Harmless probe executables verify
+`run` and `tool` arguments through the real PowerShell, Podman, and container
+manager paths. No providers or credentials are used. The container is removed
+on success and retained for diagnosis on failure. This check is never run by
+the offline suite.
 
 User-run validation used Windows 11 Enterprise x64, PowerShell 7.6.6, Python
 3.14.7, WSL 2.7.13.0, Podman client/engine 6.1.2, and OpenSSH 9.5p2.
