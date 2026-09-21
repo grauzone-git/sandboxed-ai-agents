@@ -473,7 +473,8 @@ The operation never writes the PAT to a credential file, profile, image, label,
 or container configuration. Only explicit persistent setup writes the private
 environment settings file described above. A forced kill can leave temporary Azure configuration behind;
 no PAT is deliberately stored there. Do not put the PAT in source files,
-shell profiles, transcripts, tracing output, or persistent environment settings.
+shell profiles, transcripts or tracing output. Use only the explicit setup
+workflow above for persistent environment storage.
 Revoking a PAT in Azure DevOps is how to invalidate copies already in use.
 
 The helper supports `devops`, `boards`, `repos`, `pipelines`, and `artifacts`
@@ -486,11 +487,16 @@ login is attempted.
 Offline tests use dummy PATs and fake Podman/Azure CLI executables. They cover
 explicit opt-in, missing values, literal transport, isolation, native errors,
 setup modes, replacement, cleanup and startup environment loading.
-Live validation is separate and pending: after rebuilding, run the read-only
-`devops project list` example against an organization you can access from Linux
-and Windows/WSL, then repeat with an expired or revoked test PAT. Record only the
-platform, date, command without secrets, exit status and success/failure summary.
-No authenticated live run is claimed by the offline suite.
+User-reported live validation: Azure DevOps setup completed successfully, and
+a DevOps work item was changed from inside the sandbox. The report did not
+specify the platform, setup mode, exact command or exit status. This confirms
+a successful authenticated operation in the user's environment; it is separate
+from the offline suite and was not independently executed by the agent.
+
+Still to record: the read-only `devops project list` example on Linux and
+Windows/WSL, and an expired or revoked test PAT failure. Record only the platform,
+date, command without secrets, exit status and success/failure summary. Never
+include a real PAT in test artifacts, issue comments or validation records.
 
 ## Check the toolchain
 

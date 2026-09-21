@@ -191,6 +191,18 @@ else: sys.exit('Unexpected call: ' + repr(args))
         self.cli("up", "demo", "--agents", "codex", success=False, env={"TEST_CHOWN_FAIL": "1"})
         self.assertFalse(any("init" in call for call in self.calls()))
 
+    def test_azdo_host_script_cannot_be_exposed_as_workspace(self):
+        script = self.checkout / "src/host/azdo.py"
+        link = self.root / "azdo-link"
+        link.symlink_to(script)
+        for workspace in (script, link):
+            with self.subTest(workspace=workspace):
+                self.log.unlink(missing_ok=True)
+                result = self.cli("up", "demo", str(workspace), "--agents", "codex", success=False)
+                self.assertIn("host SSH/controller files", result.stderr)
+                self.assertFalse(any(call[0] == "run" or call[:2] == ["volume", "create"]
+                                     for call in self.calls()))
+
 
 if __name__ == "__main__":
     unittest.main()
