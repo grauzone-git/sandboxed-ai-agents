@@ -13,6 +13,7 @@ dotnet --list-sdks | grep -E '^10\.'
 node --version
 npm --version
 git --version
+pwsh -NoLogo -NoProfile -Command '$PSVersionTable.PSVersion.ToString()'
 az version
 test -n "$(az extension show --name azure-devops --query version --output tsv)"
 az devops --help >/dev/null

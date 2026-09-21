@@ -23,8 +23,8 @@ persistent terminal.
 ## What's inside
 
 The image is Debian 12 slim with Node.js 24 and npm, .NET SDKs 9 and 10, Git,
-GitHub CLI, Azure CLI with the DevOps extension, tmux, OpenSSH, and the system
-dependencies for headless Playwright runs against Chromium, Firefox, and Edge.
+GitHub CLI, Azure CLI with the DevOps extension, PowerShell, tmux, OpenSSH, and
+the system dependencies for headless Playwright runs against Chromium, Firefox, and Edge.
 Everything above ships in the shared image; agents and dashboards install per
 sandbox, into that sandbox's own home volume.
 
@@ -210,6 +210,7 @@ report a vulnerability.
 ./sandbox agents NAME list|check|set|enable|disable|update|login ...
 ./sandbox tools NAME list|check|set|enable|disable|update ...
 ./sandbox tools NAME login github             # GitHub login and Git commit identity
+./sandbox azdo NAME --pat-env -- devops project list --organization URL
 ./sandbox tools NAME setup t3                 # T3 Connect sign-in and activation
 ./sandbox run NAME AGENT [args...]          # one-off command
 ./sandbox tool NAME TOOL [args...]          # one-off tool command
@@ -223,6 +224,9 @@ report a vulnerability.
 
 Run `./sandbox --help` for the full syntax, including environment variables such
 as `SANDBOX_IMAGE`, `SANDBOX_CPUS`, and `SANDBOX_MEMORY`.
+
+Azure DevOps PAT commands and Windows PowerShell through WSL are described in
+the [PAT workflow](docs/TOOLCHAIN.md#azure-devops-with-an-environment-pat).
 
 ## Documentation
 

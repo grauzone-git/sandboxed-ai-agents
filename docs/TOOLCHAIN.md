@@ -6,7 +6,7 @@ See the [Windows quick guide](QUICKGUIDE-WINDOWS.md) for host setup.
 [Back to the overview](../README.md) · [Agents and tools](AGENT-SETUP.md)
 
 The shared image carries Debian 12 slim, Node.js 24 with npm, .NET SDKs 9 and
-10, Git and the GitHub CLI, Azure CLI with the DevOps extension, OpenSSH, tmux,
+10, Git and the GitHub CLI, Azure CLI with the DevOps extension, PowerShell (`pwsh`), OpenSSH, tmux,
 and Playwright's system dependencies. Agents and optional dashboard tools are
 not in the image; they install per sandbox, into its named home.
 
@@ -30,6 +30,7 @@ arguments pass straight through to Podman, and you can combine them freely:
 | `PLAYWRIGHT_VERSION` | `latest` | Pin the image's Playwright CLI |
 | `DOTNET9_VERSION`, `DOTNET10_VERSION` | `latest` | Pin exact SDK versions inside each major release |
 | `AZURE_CLI_VERSION`, `AZURE_DEVOPS_VERSION` | `latest` | Pin Azure CLI and DevOps extension versions |
+| `POWERSHELL_VERSION` | `latest` | Pin the full Microsoft Debian package version |
 | `BASE_IMAGE` | `docker.io/library/node:24-bookworm-slim` | Pin the compatible base, optionally by digest |
 
 For compiler tools plus WebKit dependencies:
@@ -272,12 +273,140 @@ az extension show --name azure-devops
 az devops --help
 ```
 
-Authenticate inside the sandbox using whatever flow your organization approves
-before you touch Azure resources or DevOps projects.
-[Azure DevOps CLI setup](https://learn.microsoft.com/en-us/azure/devops/cli/).
-Login and configuration state goes to `~/.azure` in the named home. The DevOps
-extension is installed system-wide in the image, so it is still there when you
-attach an existing home volume. Both tools update through image builds.
+The DevOps extension and PowerShell are installed system-wide in the image.
+Rebuild and recreate existing sandboxes with `./sandbox update agent01` to get
+`sandbox-azdo` and `pwsh`, retaining their named volumes. PowerShell installs
+from [Microsoft's Debian package repository](https://learn.microsoft.com/en-us/powershell/scripting/install/install-debian).
+The package installation targets amd64; ARM64 needs a separate PowerShell
+installation recipe and has not been validated.
+
+#### Azure DevOps with an environment PAT
+
+`AZURE_DEVOPS_EXT_PAT` authenticates Azure DevOps commands without `az login`,
+`az devops login`, or device-code authentication. It does not authenticate Azure
+Resource Manager commands. See [Microsoft's PAT documentation](https://learn.microsoft.com/en-us/azure/devops/cli/log-in-via-pat?view=azure-devops).
+
+Inside the sandbox, if the variable is already exported, run:
+
+```bash
+sandbox-azdo devops project list --organization https://dev.azure.com/contoso
+sandbox-azdo repos list --organization https://dev.azure.com/contoso --project 'My Project'
+```
+
+The helper fails immediately on a missing or empty variable. It runs the `az`
+operation with the supplied PAT and a fresh temporary Azure configuration, so
+saved Azure logins cannot take precedence. Pass `--organization` (or `--org`)
+on each invocation and `--project` where the operation supports it. Saved
+organization/project defaults are intentionally not read or changed.
+
+To enter a PAT without putting its value in Bash history, inside the sandbox:
+
+```bash
+read -rsp 'Azure DevOps PAT: ' AZURE_DEVOPS_EXT_PAT; printf '\n'
+export AZURE_DEVOPS_EXT_PAT
+sandbox-azdo devops project list --organization https://dev.azure.com/contoso
+unset AZURE_DEVOPS_EXT_PAT
+```
+
+You can also use the standard CLI directly when you want the current session's
+Azure configuration and defaults. Inside the sandbox:
+
+```bash
+: "${AZURE_DEVOPS_EXT_PAT:?Set a nonempty PAT in this session first}"
+az devops project list --organization https://dev.azure.com/contoso
+```
+
+Direct `az` runs use `~/.azure` unless you override `AZURE_CONFIG_DIR`; the
+helper's isolation and output redaction apply only to `sandbox-azdo`.
+
+PowerShell is available inside the sandbox by running `pwsh -NoLogo -NoProfile`.
+For a variable already set in that PowerShell process, the same command works:
+
+```powershell
+sandbox-azdo devops project list --organization https://dev.azure.com/contoso
+Remove-Item Env:AZURE_DEVOPS_EXT_PAT -ErrorAction SilentlyContinue
+```
+
+If entering a replacement interactively in PowerShell 7, use
+`$env:AZURE_DEVOPS_EXT_PAT = Read-Host 'Azure DevOps PAT' -MaskInput`.
+
+#### Explicit host-to-sandbox PAT transport
+
+On the Linux host, with `AZURE_DEVOPS_EXT_PAT` already exported:
+
+```bash
+./sandbox azdo agent01 --pat-env -- devops project list --organization https://dev.azure.com/contoso
+./sandbox azdo agent01 --pat-env -- repos list --organization https://dev.azure.com/contoso --project 'My Project'
+unset AZURE_DEVOPS_EXT_PAT
+```
+
+`--pat-env` is required even when the variable exists. The launcher checks
+rootless Podman and checkout ownership before sending a JSON-encoded token
+over stdin to the selected sandbox as UID 1000. It does not use a TTY, a shell
+command containing the token, `podman --env`, SSH credential forwarding, or a
+credential mount. Host Azure login state is untouched. Command stdin is reserved
+for token transport, and output is buffered until completion (up to 64 MiB per
+stream inside the sandbox).
+
+On Windows, use Windows PowerShell or PowerShell 7 with WSL. Create and manage
+the sandbox using the Linux launcher and rootless Podman in that WSL distro.
+There is no native Windows launcher. With the PAT already in the Windows
+PowerShell process environment, temporarily opt it into WSL forwarding:
+
+```powershell
+if ([string]::IsNullOrEmpty($env:AZURE_DEVOPS_EXT_PAT)) {
+    throw 'Set a nonempty AZURE_DEVOPS_EXT_PAT in this PowerShell process first.'
+}
+$previousWslEnv = $env:WSLENV
+try {
+    $env:WSLENV = 'AZURE_DEVOPS_EXT_PAT/u'
+    wsl.exe --distribution Ubuntu --cd /home/me/sandboxed-ai-agents --exec ./sandbox azdo agent01 --pat-env -- devops project list --organization https://dev.azure.com/contoso
+    if ($LASTEXITCODE -ne 0) { throw "Azure DevOps command failed (exit $LASTEXITCODE)." }
+} finally {
+    $env:WSLENV = $previousWslEnv
+    Remove-Item Env:AZURE_DEVOPS_EXT_PAT -ErrorAction SilentlyContinue
+}
+```
+
+Replace the distro and checkout path with those used to create your sandbox.
+[`WSLENV`](https://learn.microsoft.com/en-us/windows/wsl/filesystems#share-environment-variables-between-windows-and-wsl-with-wslenv)
+contains the variable name only; `/u` forwards it toward WSL. This
+example temporarily replaces the forwarding list and restores it afterwards.
+Never interpolate the PAT into a `wsl.exe`, `podman`, or Azure CLI argument.
+
+#### Lifetime, errors and validation
+
+The host workflow makes the token available only to that `az` invocation and
+its children. It does not make it available to subsequent commands, existing
+agents, managed terminal sessions, or SSH sessions. Run the host command again
+to reuse or replace the token. Inside a shell, an exported variable is inherited
+by newly started children until you unset it or close the shell. Unsetting it
+does not erase copies already inherited by running agents; stop those processes
+to remove their access.
+
+There is no persistence option. The helper creates a private temporary Azure
+configuration under `/tmp`, disables Azure file logging and telemetry, and
+removes that directory on normal completion, including native CLI failure.
+It never writes the PAT to a credential file, profile, image, label, or container
+configuration. A forced kill can leave temporary Azure configuration behind;
+no PAT is deliberately stored there. Do not put the PAT in source files,
+shell profiles, transcripts, tracing output, or persistent environment settings.
+Revoking a PAT in Azure DevOps is how to invalidate copies already in use.
+
+The helper supports `devops`, `boards`, `repos`, `pipelines`, and `artifacts`
+operations. It rejects login, logout, configure, debug, and verbose commands.
+Native authentication and permission errors retain their exit code and diagnostic
+text with the token redacted. Check PAT expiration, organization membership and
+the scope required by the operation when Azure rejects a request. No fallback
+login is attempted.
+
+Offline tests use dummy PATs and fake Podman/Azure CLI executables. They cover
+explicit opt-in, missing values, literal transport, isolation and native errors.
+Live validation is separate and pending: after rebuilding, run the read-only
+`devops project list` example against an organization you can access from Linux
+and Windows/WSL, then repeat with an expired or revoked test PAT. Record only the
+platform, date, command without secrets, exit status and success/failure summary.
+No authenticated live run is claimed by the offline suite.
 
 ## Check the toolchain
 

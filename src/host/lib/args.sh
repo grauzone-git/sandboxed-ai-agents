@@ -20,6 +20,8 @@ Usage:
   ./sandbox tools NAME setup t3
   ./sandbox tool NAME TOOL [arguments...]
   ./sandbox run NAME AGENT [arguments...]
+  ./sandbox azdo NAME --pat-env -- devops COMMAND --organization URL [--project PROJECT]
+                                           # PAT from environment, one invocation
   ./sandbox copilot|claude|codex|hermes|opencode|t3|deepseek NAME
                                            # start/reconnect a persistent terminal
   ./sandbox service NAME t3|hermes-dashboard|deepseek-ui|tokentracker [status|start|stop|restart|logs]
@@ -40,6 +42,10 @@ Existing sandboxes can use 'agents NAME set none' to disable every agent.
 Agent login requires an enabled agent: Codex/Copilot device code, Claude browser/code login,
 or OpenCode/Hermes interactive provider setup.
 GitHub login uses the built-in gh CLI and configures Git HTTPS credentials.
+Azure DevOps requires explicit --pat-env and a nonempty AZURE_DEVOPS_EXT_PAT.
+The PAT travels over stdin, is never saved, and is unavailable to later sessions.
+Use devops, boards, repos, pipelines or artifacts commands with --organization URL.
+PAT commands do not use saved defaults or support login, configure, debug or verbose.
 After login, enter a Git user name and email to save globally in the sandbox home.
 T3 starts headless; its terminal command follows logs. DeepSeek opens a CLI shell.
 T3 Connect setup requires enabled T3 and restarts its managed server after sign-in.

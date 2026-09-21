@@ -9,6 +9,9 @@ for module in args podman ssh lifecycle; do
 done
 parse_cli_args "$@"
 set -- "${CLI_ARGS[@]}"
+if [[ $action == azdo ]]; then
+    exec python3 -B "$ROOT/src/host/azdo.py" "$@"
+fi
 if [[ $action == update ]]; then
     # Help and missing-argument errors do not need a running Podman service.
     if [[ $# -gt 0 && $1 != --help && $1 != -h ]]; then require_podman; fi
