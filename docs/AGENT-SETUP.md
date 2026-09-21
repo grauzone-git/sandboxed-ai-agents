@@ -1,5 +1,10 @@
 # Agents and tools
 
+For PowerShell, replace `./sandbox` in host agent/tool commands with
+`.\sandbox.ps1`. The Windows launcher supports selection, login/setup, direct
+runs, persistent sessions, service controls, and SSH forwarding. See the
+[Windows quick guide](QUICKGUIDE-WINDOWS.md#manage-agents-and-tools).
+
 [Back to the overview](../README.md) · [Sandbox lifecycle and SSH](SANDBOXES.md)
 
 These examples continue with the `agent01` sandbox from the quickstart.

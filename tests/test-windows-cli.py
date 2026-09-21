@@ -361,6 +361,135 @@ class WindowsCliTests(unittest.TestCase):
         self.assertFalse((self.home / '.ssh/sanboxed-agents/agent01').exists())
         self.assertIn('agent01-home', self.volumes)
 
+    def test_agent_and_tool_management_routes_owned_unprivileged_commands(self):
+        cases = [
+            (('agents', 'agent01'), 'agents', ['list']),
+            (('tools', 'agent01', 'check'), 'tools', ['check']),
+            (('agents', 'agent01', 'set', 'codex,claude'), 'agents', ['set', 'codex,claude']),
+            (('tools', 'agent01', 'enable', 't3@1.2.3'), 'tools', ['enable', 't3@1.2.3']),
+            (('agents', 'agent01', 'disable', 'none'), 'agents', ['disable', 'none']),
+            (('tools', 'agent01', 'update', 'all'), 'tools', ['update', 'all']),
+        ]
+        for arguments, kind, expected in cases:
+            self.calls.clear()
+            self.assertEqual(self.cli(*arguments), 0, self.output.getvalue())
+            self.assertIn(['--connection', 'machine', 'exec', '--user', '1000:1000',
+                           '--workdir', '/workspace', 'c' * 64,
+                           f'/usr/local/bin/sandbox-{kind}', *expected], self.calls)
+        self.assertFalse((self.home / '.ssh').exists())
+
+    def test_login_setup_runs_and_sessions_keep_stdin_and_literal_arguments(self):
+        cases = [
+            (('agents', 'agent01', 'login', 'copilot'), 'agents', ['login', 'copilot']),
+            (('tools', 'agent01', 'login', 'github'), 'tools', ['login', 'github']),
+            (('tools', 'agent01', 'setup', 't3'), 'tools', ['setup', 't3']),
+            (('run', 'agent01', 'codex', 'space and "quote"', '', '$literal;value'),
+             'agents', ['run', 'codex', 'space and "quote"', '', '$literal;value']),
+            (('tool', 'agent01', 't3', '--help'), 'tools', ['run', 't3', '--help']),
+            (('copilot', 'agent01'), 'agents', ['session', 'copilot']),
+            (('t3', 'agent01'), 'tools', ['session', 't3']),
+        ]
+        for arguments, kind, expected in cases:
+            self.calls.clear()
+            self.assertEqual(self.cli(*arguments), 0, self.output.getvalue())
+            call = next(call for call in self.calls if 'exec' in call)
+            self.assertIn('-i', call)
+            self.assertNotIn('-t', call)  # Captured output is not a terminal.
+            self.assertEqual(call[call.index(f'/usr/local/bin/sandbox-{kind}'):],
+                             [f'/usr/local/bin/sandbox-{kind}', *expected])
+        self.assertFalse((self.home / '.ssh').exists())
+
+    def test_manager_validation_and_ownership_precede_execution(self):
+        invalid = [('agents',), ('agents', 'agent01', 'set', 'bad'),
+                   ('tools', 'agent01', 'list', 'extra'), ('agents', 'agent01', 'login', 'deepseek'),
+                   ('tools', 'agent01', 'setup', 'github'), ('copilot', 'agent01', '--help'),
+                   ('run', 'agent01'), ('tool', 'agent01', 'not-a-tool')]
+        for arguments in invalid:
+            self.calls.clear()
+            self.assertEqual(self.cli(*arguments), 1)
+            self.assertEqual(self.calls, [])
+        self.owner_override = 'foreign'
+        self.assertEqual(self.cli('tools', 'agent01', 'set', 't3'), 1)
+        self.assertFalse(any('exec' in call for call in self.calls))
+        self.owner_override = None
+        self.native_failure = ('exec', 39)
+        self.assertEqual(self.cli('agents', 'agent01', 'check'), 39)
+
+    def test_forward_refuses_occupied_port_before_service_or_ssh(self):
+        self.prepare_host_key()
+        self.assertEqual(self.cli('ssh-config', 'agent01', '--install'), 0)
+        files = {path: path.read_bytes() for path in (self.home / '.ssh').rglob('*') if path.is_file()}
+        self.calls.clear()
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1', 0))
+            listener.listen()
+            port = str(listener.getsockname()[1])
+            self.assertEqual(self.cli('forward', 'agent01', 't3', port), 1, self.output.getvalue())
+        self.assertIn(f'Forwarding port {port} is unavailable', self.output.getvalue())
+        self.assertFalse(any('exec' in call or '-L' in call for call in self.calls))
+        self.assertEqual(files, {path: path.read_bytes() for path in files})
+        self.assertEqual(self.cli('forward', 'agent01', 't3', port), 0, self.output.getvalue())
+        self.assertTrue(any('-L' in call for call in self.calls))
+
+    @patch('windows_commands.require_forward_port')
+    def test_tool_services_and_forwarding_use_catalog_ports_and_managed_ssh(self, port_check):
+        self.assertEqual(self.cli('service', 'agent01', 'hermes', 'restart'), 0, self.output.getvalue())
+        self.assertTrue(any(call[-3:] == ['service', 'hermes-dashboard', 'restart'] for call in self.calls))
+        self.calls.clear()
+        self.assertEqual(self.cli('forward', 'agent01', 't3'), 1)
+        self.assertFalse(any('exec' in call for call in self.calls))
+        self.assertFalse((self.home / '.ssh').exists())
+        self.prepare_host_key()
+        self.assertEqual(self.cli('ssh-config', 'agent01', '--install'), 0)
+        self.calls.clear()
+        self.assertEqual(self.cli('forward', 'agent01', 't3', '4773'), 0, self.output.getvalue())
+        self.assertTrue(any(call[-3:] == ['service', 't3', 'start'] for call in self.calls))
+        forward = next(call for call in self.calls if '-L' in call)
+        self.assertIn('127.0.0.1:4773:127.0.0.1:3773', forward)
+        self.assertIn('ExitOnForwardFailure=yes', forward)
+        self.assertEqual(forward[forward.index('-F') + 1], str(self.home / '.ssh/sanboxed-agents/agent01/agent01.conf'))
+        self.assertEqual(forward[-1], 'agent01')
+        self.calls.clear()
+        self.assertEqual(self.cli('forward', 'agent01', 'deepseek'), 0)
+        self.assertTrue(any('127.0.0.1:3080:127.0.0.1:3080' in call for call in self.calls))
+        self.assertEqual([call.args[0] for call in port_check.call_args_list], [4773, 3080])
+
+    def test_invalid_service_and_forward_options_do_not_contact_engine(self):
+        for arguments in [('service', 'agent01', 't3', 'bad'), ('service', 'agent01', 'copilot'),
+                          ('forward', 'agent01', 't3', '22'), ('forward', 'agent01', 'unknown'),
+                          ('forward', 'agent01', 't3', '3773', 'extra')]:
+            self.calls.clear()
+            self.assertEqual(self.cli(*arguments), 1)
+            self.assertEqual(self.calls, [])
+
+    def test_interactive_manager_allocates_tty_only_for_terminal(self):
+        class Terminal(io.StringIO):
+            def isatty(self):
+                return True
+        with patch('sys.stdin', Terminal()), contextlib.redirect_stdout(Terminal()), contextlib.redirect_stderr(io.StringIO()):
+            result = main(['agents', 'agent01', 'login', 'codex'], runner=self.runner)
+        self.assertEqual(result, 0)
+        call = next(call for call in self.calls if 'exec' in call)
+        self.assertIn('-i', call)
+        self.assertIn('-t', call)
+
+    @patch('windows_commands.require_forward_port')
+    def test_forward_failure_preserves_ssh_files_and_native_status(self, port_check):
+        self.prepare_host_key()
+        self.assertEqual(self.cli('ssh-config', 'agent01', '--install'), 0)
+        files = {path: path.read_bytes() for path in (self.home / '.ssh').rglob('*') if path.is_file()}
+        self.calls.clear()
+        self.native_failure = ('exec', 41)
+        self.assertEqual(self.cli('forward', 'agent01', 't3'), 41)
+        self.assertFalse(any('-L' in call for call in self.calls))
+        self.native_failure = ('-L', 255)
+        self.assertEqual(self.cli('forward', 'agent01', 't3'), 255)
+        self.assertEqual(files, {path: path.read_bytes() for path in files})
+        self.owner_override = 'foreign'
+        self.calls.clear()
+        self.assertEqual(self.cli('forward', 'agent01', 't3'), 1)
+        self.assertFalse(any('exec' in call or '-L' in call for call in self.calls))
+
     def test_build_preserves_extra_arguments_and_native_exit_code(self):
         self.assertEqual(self.cli('build', '--build-arg', 'VALUE=a b"c'), 0, self.output.getvalue())
         build = next(call for call in self.calls if 'build' in call)
