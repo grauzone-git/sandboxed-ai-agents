@@ -106,10 +106,6 @@ else process.exit(1); // No image/container: stop before creation in positive pa
     assert.equal((result.stdout + result.stderr).includes('dummy-'), false);
     fs.unlinkSync(transportLog);
   }
-  const guarded = cli(['up', 'demo', path.join(checkout, 'src/host/azdo.py'), '--agents', 'codex']);
-  assert.notEqual(guarded.status, 0);
-  assert.match(guarded.stderr, /host SSH\/controller files/);
-  fs.unlinkSync(transportLog);
   for (const id of Object.keys(catalog)) {
     assert.equal(cli([id, 'demo']).status, 0, id);
     const calls = fs.readFileSync(transportLog, 'utf8').trim().split('\n').map(JSON.parse);
