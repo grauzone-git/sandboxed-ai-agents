@@ -75,6 +75,13 @@ else: sys.exit('Unexpected call: ' + repr(args))
     def calls(self):
         return [json.loads(line) for line in self.log.read_text().splitlines()] if self.log.exists() else []
 
+    def test_powershell_entry_point_is_protected_before_provisioning(self):
+        entry = self.checkout / 'sandbox.ps1'
+        entry.write_text('# PowerShell host entry point')
+        self.cli('up', 'demo', str(entry), '--agents', 'codex', success=False)
+        self.assertEqual(json.loads(self.state.read_text()), {})
+        self.assertFalse(any(call[0] == 'run' for call in self.calls()))
+
     def test_omitted_workspace_and_name_use_only_named_volumes(self):
         self.cli("up", "--agents", "codex")
         run = next(call for call in self.calls() if call[0] == "run")

@@ -18,7 +18,9 @@ COPY nested-podman-entrypoint.sh /usr/local/sbin/nested-podman-entrypoint
 COPY podman-smoke.sh /usr/local/bin/sandbox-podman-check
 COPY nested-containers.conf /etc/containers/containers.conf
 COPY nested-storage.conf /etc/containers/storage.conf
-RUN chmod 0755 /usr/local/sbin/nested-podman-entrypoint /usr/local/bin/sandbox-podman-check \
+RUN sed -i 's/\r$//' /usr/local/sbin/nested-podman-entrypoint /usr/local/bin/sandbox-podman-check \
+       /etc/containers/containers.conf /etc/containers/storage.conf \
+    && chmod 0755 /usr/local/sbin/nested-podman-entrypoint /usr/local/bin/sandbox-podman-check \
     && sed -i '/^SetEnv / s|$| XDG_RUNTIME_DIR=/run/user/1000|' /etc/ssh/sshd_config \
     && printf 'export XDG_RUNTIME_DIR=/run/user/1000\n' > /etc/profile.d/nested-podman.sh
 ENV XDG_RUNTIME_DIR=/run/user/1000

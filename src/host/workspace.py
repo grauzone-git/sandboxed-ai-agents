@@ -6,7 +6,18 @@ import sys
 def protected_paths(project, ssh_root):
     """Include lexical paths and resolved targets of source-file symlinks."""
     paths = [ssh_root, project / ".local", project / ".git", project / "sandbox",
-             project / "src", project / "tests", project / "Makefile"]
+             project / "sandbox.ps1", project / "src", project / "tests", project / "Makefile"]
+    # A linked worktree stores Git metadata outside its checkout. Protect both
+    # that worktree's directory and the common object/configuration directory.
+    git = project / ".git"
+    if git.is_file():
+        reference = git.read_text(encoding="utf-8").strip()
+        if reference.startswith("gitdir: "):
+            metadata = (project / reference[len("gitdir: "):]).resolve()
+            paths.append(metadata)
+            common = metadata / "commondir"
+            if common.is_file():
+                paths.append((metadata / common.read_text(encoding="utf-8").strip()).resolve())
     # rglob does not follow directory symlinks. Each link itself is still checked
     # against its resolved target, without traversing arbitrary external trees.
     for directory in (project / "src", project / "tests"):

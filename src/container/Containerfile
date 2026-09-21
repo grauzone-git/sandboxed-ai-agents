@@ -107,7 +107,13 @@ COPY git-identity.sh /usr/local/lib/sandbox-agents/git-identity.sh
 COPY prepare-hermes-dashboard.py /usr/local/lib/sandbox-agents/prepare-hermes-dashboard.py
 COPY sandbox-agents /usr/local/bin/sandbox-agents
 COPY sandbox-agents /usr/local/bin/sandbox-tools
-RUN chmod 0755 /usr/local/sbin/agent-entrypoint /usr/local/bin/agent-smoke /usr/local/bin/sandbox-agents /usr/local/bin/sandbox-tools
+# Existing Windows checkouts may still contain CRLF after pulling attributes.
+RUN sed -i 's/\r$//' /etc/ssh/sshd_config /etc/profile.d/agent-tools.sh \
+       /usr/local/sbin/agent-entrypoint /usr/local/bin/agent-smoke \
+       /usr/local/bin/sandbox-agents /usr/local/bin/sandbox-tools \
+       /usr/local/lib/sandbox-agents/git-identity.sh \
+       /usr/local/lib/sandbox-agents/prepare-hermes-dashboard.py \
+    && chmod 0755 /usr/local/sbin/agent-entrypoint /usr/local/bin/agent-smoke /usr/local/bin/sandbox-agents /usr/local/bin/sandbox-tools
 WORKDIR /workspace
 EXPOSE 2222
 USER root
