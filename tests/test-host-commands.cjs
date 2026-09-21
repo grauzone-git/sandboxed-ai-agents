@@ -23,6 +23,7 @@ async function test() {
   fs.cpSync(path.join(project, 'src'), path.join(checkout, 'src'), { recursive: true });
   write(sshConfig, '# Test SSH configuration\n');
   write(path.join(mockBin, 'id'), '#!/bin/sh\nprintf "1000\\n"\n', 0o755);
+  const dummyPat = 'dummy-$();`literal`\" token\nnext';
   const recorder = `#!/usr/bin/env node
 const fs = require('node:fs');
 const args = process.argv.slice(2);
@@ -31,6 +32,13 @@ fs.appendFileSync(process.env.TEST_TRANSPORT_LOG, JSON.stringify({tool: require(
   write(path.join(mockBin, 'podman'), recorder + `
 if (args[0] === 'info') console.log('true');
 else if (args[0] === 'inspect') console.log(process.env.TEST_OWNER || process.env.TEST_PROJECT);
+else if (args[0] === 'exec' && args.includes('/usr/local/bin/sandbox-azdo')) {
+  const token = JSON.parse(fs.readFileSync(0, 'utf8'));
+  if (token !== ${JSON.stringify(dummyPat)}) process.exit(91);
+  if ('AZURE_DEVOPS_EXT_PAT' in process.env) process.exit(92);
+  console.log('projects: []');
+  process.exit(Number(process.env.TEST_LOGIN_EXIT || 0));
+}
 else if (args[0] === 'exec' && (args.includes('login') || args.includes('setup'))) process.exit(Number(process.env.TEST_LOGIN_EXIT || 0));
 else if (args[0] === 'exec' && args.includes('service') && args.at(-1) === 'start') process.exit(0);
 else if (process.env.TEST_REMOVE && ['stop', 'rm'].includes(args[0])) process.exit(args[0] === process.env.TEST_REMOVE_FAIL ? 1 : 0);
@@ -71,6 +79,37 @@ else process.exit(1); // No image/container: stop before creation in positive pa
     assert.notEqual(cli(args).status, 0, JSON.stringify(args));
     assert.equal(fs.existsSync(transportLog), false, 'Rejected input reached Podman/SSH');
   }
+  const azdoArgs = ['azdo', 'demo', '--pat-env', '--', 'devops', 'project', 'list', '--organization', 'https://dev.azure.com/contoso'];
+  for (const args of [azdoArgs.filter(arg => arg !== '--pat-env'), ['azdo'], ['azdo', 'demo', '--pat-env']]) {
+    const result = cli(args, { AZURE_DEVOPS_EXT_PAT: dummyPat });
+    assert.notEqual(result.status, 0);
+    assert.equal(fs.existsSync(transportLog), false, 'Missing opt-in reached Podman');
+    assert.equal((result.stdout + result.stderr).includes('dummy-'), false);
+  }
+  for (const value of ['', undefined]) {
+    const result = cli(azdoArgs, { AZURE_DEVOPS_EXT_PAT: value });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /nonempty AZURE_DEVOPS_EXT_PAT/);
+    assert.equal(fs.existsSync(transportLog), false, 'Missing PAT reached Podman');
+  }
+  const foreign = cli(azdoArgs, { AZURE_DEVOPS_EXT_PAT: dummyPat, TEST_OWNER: '/foreign' });
+  assert.notEqual(foreign.status, 0);
+  assert.equal(fs.readFileSync(transportLog, 'utf8').includes('"exec"'), false);
+  fs.unlinkSync(transportLog);
+  for (const exitCode of [0, 7]) {
+    const result = cli(azdoArgs, { AZURE_DEVOPS_EXT_PAT: dummyPat, TEST_LOGIN_EXIT: String(exitCode) });
+    assert.equal(result.status, exitCode, result.stderr);
+    const logged = fs.readFileSync(transportLog, 'utf8');
+    const calls = logged.trim().split('\n').map(JSON.parse);
+    assert.deepEqual(calls.at(-1).args, ['exec', '-i', '--user', '1000:1000', '--workdir', '/workspace', 'demo', '/usr/local/bin/sandbox-azdo', '--pat-stdin', ...azdoArgs.slice(4)]);
+    assert.equal(logged.includes('dummy-'), false);
+    assert.equal((result.stdout + result.stderr).includes('dummy-'), false);
+    fs.unlinkSync(transportLog);
+  }
+  const guarded = cli(['up', 'demo', path.join(checkout, 'src/host/azdo.py'), '--agents', 'codex']);
+  assert.notEqual(guarded.status, 0);
+  assert.match(guarded.stderr, /host SSH\/controller files/);
+  fs.unlinkSync(transportLog);
   for (const id of Object.keys(catalog)) {
     assert.equal(cli([id, 'demo']).status, 0, id);
     const calls = fs.readFileSync(transportLog, 'utf8').trim().split('\n').map(JSON.parse);
