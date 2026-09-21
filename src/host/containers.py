@@ -8,7 +8,7 @@ LABEL = 'io.sandboxed-agents.project'
 
 
 def create_args(name, project, image, workspace, port, memory, cpus,
-                pids=2048, shm='1g', operation='run', capabilities='none'):
+                pids=2048, shm='1g', operation='run', capabilities='none', seccomp=None):
     capabilities = parse_capabilities(capabilities)
     args = [operation]
     if operation == 'run':
@@ -18,7 +18,7 @@ def create_args(name, project, image, workspace, port, memory, cpus,
     if capabilities == 'podman':
         security = ['--device=/dev/fuse', '--device=/dev/net/tun', '--security-opt=label=disable',
                     '--security-opt=apparmor=unconfined', '--security-opt=unmask=ALL',
-                    f'--security-opt=seccomp={seccomp_path(project)}']
+                    f'--security-opt=seccomp={seccomp if seccomp is not None else seccomp_path(project)}']
         # Both containers/storage's runroot and libpod's temporary state must
         # disappear when the outer sandbox stops, unlike the persisted home.
         runtime = ['--tmpfs', '/run/user/1000:rw,nosuid,nodev,noexec,mode=0700']

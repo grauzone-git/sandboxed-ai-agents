@@ -1,6 +1,7 @@
 """Nested seccomp changes preserve host restrictions unrelated to namespace setup."""
 import copy
 import json
+import os
 from pathlib import Path
 import stat
 import subprocess
@@ -43,6 +44,7 @@ class NestedSeccompTests(unittest.TestCase):
             'names': ['sethostname', 'setdomainname', 'setns'], 'action': 'SCMP_ACT_ALLOW'})
         self.assertEqual(nested_seccomp(result), result)
 
+    @unittest.skipUnless(os.name == 'posix', 'Linux host policy staging requires POSIX file permissions')
     def test_generated_policy_is_private_and_not_a_workspace_mount(self):
         with tempfile.TemporaryDirectory() as directory:
             project = Path(directory)

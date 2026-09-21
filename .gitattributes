@@ -1,0 +1,5 @@
+# These files run in Linux containers even when the checkout lives on Windows.
+/src/container/** text eol=lf
+*.sh text eol=lf
+/sandbox text eol=lf
+/tests/run text eol=lf

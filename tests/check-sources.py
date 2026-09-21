@@ -3,6 +3,7 @@ import ast
 import json
 from pathlib import Path
 import re
+import shutil
 import subprocess
 from urllib.parse import unquote, urlsplit
 
@@ -33,6 +34,8 @@ def main():
             path = document.parent / unquote(link.path)
             if not path.exists():
                 raise ValueError(f"Broken local link in {document.relative_to(ROOT)}: {target}")
+    if shutil.which('pwsh'):
+        subprocess.run(['pwsh', '-NoProfile', '-File', str(ROOT / 'tests/check-powershell.ps1')], check=True)
     print("Bash/Python/JavaScript syntax, JSON catalogs, and local documentation links: OK")
 
 
