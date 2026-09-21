@@ -71,6 +71,12 @@ Update preserves storage, SSH setup, selections, resource/port settings, and
 running/stopped state, with rollback on replacement failure. Plain start/restart
 do not change host SSH files; add `--ssh-config` to request setup.
 
+SSH setup and removal merge the current host config under a shared lock. If an
+operation reports a busy lock or a config edit during file preparation, retry
+after the other writer finishes. An interrupted operation can leave
+`~/.ssh/sanboxed-agents/.config.lock`; remove that empty directory only after
+confirming no SSH setup or removal is running.
+
 At creation, use `--agents 'codex,claude'` for multiple agents, `--tools t3` for
 an optional tool, `--cpus 2 --memory 6g` for resource limits, or
 `--capabilities podman` for nested containers.

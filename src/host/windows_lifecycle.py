@@ -43,9 +43,12 @@ def execute(runtime, project, action, name, option, wait_ready):
                     if labels.get(LABEL) != project:
                         raise ValueError(f'Volume {volume} belongs to another checkout.')
                     volumes.append(volume)
-        runtime.run('stop', identity, capture=False)
-        runtime.run('rm', identity, capture=False)
-        ssh.remove()
+        # A busy SSH config writer must fail before removing the container,
+        # while a failed container removal must leave SSH access intact.
+        with ssh.config_lock(for_removal=True):
+            runtime.run('stop', identity, capture=False)
+            runtime.run('rm', identity, capture=False)
+            ssh.remove(config_locked=True)
         for volume in volumes:
             runtime.run('volume', 'rm', volume, capture=False)
         print(f'Removed {name}. Host workspace directories retained. '

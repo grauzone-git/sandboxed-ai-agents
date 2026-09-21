@@ -183,6 +183,103 @@ class WindowsCliTests(unittest.TestCase):
         self.assertIn((state / 'agent01.conf').as_posix(), (self.home / '.ssh/config').read_text())
         self.assertIn('SSH configured: ssh agent01', self.output.getvalue())
 
+    def test_ssh_install_preserves_edits_made_during_provisioning(self):
+        from windows_paths import checkout_identity
+        from windows_runtime import Runtime
+        from windows_ssh import SshSetup
+        self.prepare_host_key()
+        config = self.home / '.ssh/config'
+        config.parent.mkdir()
+        config.write_bytes(b'Host original\r\n    HostName original.example\r\n')
+        runtime = Runtime(self.runner)
+        runtime.connection = 'machine'
+        setup = SshSetup(runtime, checkout_identity(PROJECT), 'agent01')
+        updated = config.read_bytes() + b'Host added-during-build\r\n    HostName new.example\r\n'
+        config.write_bytes(updated)
+        setup.install()
+        self.assertTrue(config.read_bytes().endswith(updated))
+
+    def test_overlapping_ssh_setups_preserve_both_includes(self):
+        from windows_paths import checkout_identity
+        from windows_runtime import Runtime
+        from windows_ssh import SshSetup
+        self.prepare_host_key()
+        runtime = Runtime(self.runner)
+        runtime.connection = 'machine'
+        setups = [SshSetup(runtime, checkout_identity(PROJECT), name) for name in ('agent01', 'agent02')]
+        for setup in setups:
+            setup.install()
+        content = (self.home / '.ssh/config').read_text()
+        for name in ('agent01', 'agent02'):
+            self.assertEqual(content.count(f'/{name}/{name}.conf'), 1)
+
+    def test_ssh_config_lock_prevents_install_and_remove_overwriting_another_writer(self):
+        from windows_paths import checkout_identity
+        from windows_runtime import Runtime
+        from windows_ssh import SshSetup
+        self.prepare_host_key()
+        self.assertEqual(self.cli('ssh-config', 'agent01', '--install'), 0)
+        runtime = Runtime(self.runner)
+        runtime.connection = 'machine'
+        setup = SshSetup(runtime, checkout_identity(PROJECT), 'agent01')
+        original = setup.config.read_bytes()
+        lock = setup.root / '.config.lock'
+        lock.mkdir()
+        try:
+            for operation in (setup.install, setup.remove):
+                with self.assertRaisesRegex(ValueError, 'SSH config update is locked'):
+                    operation()
+                self.assertEqual(setup.config.read_bytes(), original)
+                self.assertTrue((setup.state / 'id_ed25519').is_file())
+                self.assertTrue(lock.is_dir())
+        finally:
+            lock.rmdir()
+        setup.remove()
+        self.assertFalse(setup.state.exists())
+        self.assertFalse(lock.exists())
+
+    def test_ssh_config_edit_during_file_preparation_is_not_overwritten(self):
+        from windows_paths import checkout_identity
+        from windows_runtime import Runtime
+        from windows_ssh import SshSetup
+        self.prepare_host_key()
+        runtime = Runtime(self.runner)
+        runtime.connection = 'machine'
+        setup = SshSetup(runtime, checkout_identity(PROJECT), 'agent01')
+        edited = b'Host edited-during-write\r\n    HostName kept.example\r\n'
+        secure = setup.secure
+
+        def edit_during_acl_update(path):
+            secure(path)
+            if path.parent == setup.config.parent:
+                setup.config.write_bytes(edited)
+
+        with patch.object(setup, 'secure', side_effect=edit_during_acl_update):
+            with self.assertRaisesRegex(ValueError, 'SSH config changed'):
+                setup.install()
+        self.assertEqual(setup.config.read_bytes(), edited)
+        self.assertFalse((setup.root / '.config.lock').exists())
+        self.assertEqual(list(setup.config.parent.glob('.sandbox-ssh-*')), [])
+        setup.install()
+        self.assertTrue(setup.config.read_bytes().endswith(edited))
+
+    def test_remove_checks_ssh_config_lock_before_container_mutation(self):
+        self.prepare_host_key()
+        self.assertEqual(self.cli('ssh-config', 'agent01', '--install'), 0)
+        config = self.home / '.ssh/config'
+        original = config.read_bytes()
+        lock = self.home / '.ssh/sanboxed-agents/.config.lock'
+        lock.mkdir()
+        self.calls.clear()
+        try:
+            self.assertEqual(self.cli('remove', 'agent01'), 1)
+            self.assertIn('SSH config update is locked', self.output.getvalue())
+            self.assertFalse(any(call[2:3] in (['stop'], ['rm']) for call in self.calls))
+            self.assertEqual(config.read_bytes(), original)
+        finally:
+            lock.rmdir()
+        self.assertEqual(self.cli('remove', 'agent01'), 0, self.output.getvalue())
+
     def test_ssh_is_opt_in_and_can_be_added_later_idempotently(self):
         self.prepare_host_key()
         self.assertEqual(self.cli('up', 'agent01', '--agents', 'codex'), 0)
