@@ -81,7 +81,7 @@ class WindowsCliTests(unittest.TestCase):
                 code = 0 if self.exists else 1
             elif args[0] == 'inspect':
                 from windows_paths import checkout_identity
-                output = json.dumps([{'State': self.container_state, 'Config': {'Labels': {'io.sandboxed-agents.project': self.owner_override or checkout_identity(PROJECT)}}}])
+                output = json.dumps([{'Id': 'c' * 64, 'Name': 'agent01', 'Mounts': [{'Type': 'volume', 'Name': 'agent01-' + suffix, 'Destination': dest} for suffix, dest in [('home', '/home/agent'), ('sshd', '/var/lib/agent-sshd'), ('workspace', '/workspace')]], 'State': self.container_state, 'Config': {'Labels': {'io.sandboxed-agents.project': self.owner_override or checkout_identity(PROJECT)}}}])
             elif args[0] == 'port':
                 output = '127.0.0.1:2297\n'
             elif args[0] == 'exec' and args[-1] == '/var/lib/agent-sshd/ssh_host_ed25519_key.pub' and '/bin/cat' in args:
@@ -105,14 +105,17 @@ class WindowsCliTests(unittest.TestCase):
         return result
 
     def test_creation_uses_isolated_volumes_and_explicit_selections(self):
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1', 0))
+            port = str(listener.getsockname()[1])
         self.assertEqual(self.cli('up', 'agent01', '--agents', 'codex', '--tools', 't3',
-                                  '--ssh-port', '2297', '--memory', '6g', '--cpus', '2'),
+                                  '--ssh-port', port, '--memory', '6g', '--cpus', '2'),
                          0, self.output.getvalue())
         run = next(call for call in self.calls if 'run' in call)
         mounts = [run[i + 1] for i, value in enumerate(run) if value == '--volume']
         self.assertEqual(mounts, ['agent01-workspace:/workspace', 'agent01-home:/home/agent',
                                   'agent01-sshd:/var/lib/agent-sshd'])
-        self.assertIn('127.0.0.1:2297:2222', run)
+        self.assertIn(f'127.0.0.1:{port}:2222', run)
         self.assertIn('--memory=6g', run)
         self.assertIn('--cpus=2', run)
         self.assertTrue(any('/usr/local/bin/sandbox-agents' in call and call[-2:] == ['init', 'codex']
@@ -275,6 +278,88 @@ class WindowsCliTests(unittest.TestCase):
         self.assertIn('podman --connection machine logs --tail 100 agent01', self.output.getvalue())
         self.assertEqual(len(self.volumes), 3)
         self.assertFalse(any('rm' in call or 'init' in call for call in self.calls))
+
+    def test_start_stop_and_restart_enforce_ownership_without_implicit_ssh(self):
+        for action in ('start', 'stop', 'restart'):
+            self.calls.clear()
+            self.assertEqual(self.cli(action, 'agent01'), 0, self.output.getvalue())
+            self.assertTrue(any(call[2:] == [action, 'c' * 64] for call in self.calls))
+            self.assertFalse((self.home / '.ssh').exists())
+        self.owner_override = 'other'
+        self.calls.clear()
+        self.assertEqual(self.cli('stop', 'agent01'), 1)
+        self.assertFalse(any('stop' in call for call in self.calls))
+
+    def test_remove_retains_volumes_and_cleans_only_owned_ssh_after_success(self):
+        self.prepare_host_key()
+        self.assertEqual(self.cli('ssh-config', 'agent01', '--install'), 0)
+        config = self.home / '.ssh/config'
+        with config.open('a') as stream:
+            stream.write('Host unrelated\n    HostName example.test\n')
+        self.native_failure = ('rm', 42)
+        self.assertEqual(self.cli('remove', 'agent01'), 42, self.output.getvalue())
+        self.assertTrue((self.home / '.ssh/sanboxed-agents/agent01/id_ed25519').exists())
+        self.native_failure = None
+        self.calls.clear()
+        self.assertEqual(self.cli('remove', 'agent01'), 0, self.output.getvalue())
+        self.assertEqual(config.read_text(), 'Host unrelated\n    HostName example.test\n')
+        self.assertFalse((self.home / '.ssh/sanboxed-agents/agent01').exists())
+        self.assertFalse(any(call[2:4] == ['volume', 'rm'] for call in self.calls))
+
+    def test_remove_checks_all_volume_owners_before_mutation(self):
+        from windows_paths import checkout_identity
+        self.volumes = {'agent01-home': checkout_identity(PROJECT), 'agent01-sshd': 'foreign'}
+        self.assertEqual(self.cli('remove', 'agent01', '--volumes'), 1)
+        self.assertFalse(any('stop' in call or 'rm' in call for call in self.calls))
+        self.volumes['agent01-sshd'] = checkout_identity(PROJECT)
+        self.assertEqual(self.cli('remove', 'agent01', '--volumes'), 0, self.output.getvalue())
+        removed = [call[2:] for call in self.calls if call[2:4] == ['volume', 'rm']]
+        self.assertEqual(removed, [['volume', 'rm', 'agent01-home'], ['volume', 'rm', 'agent01-sshd']])
+
+    def test_start_with_opt_in_and_diagnostics_use_owned_sandbox(self):
+        self.prepare_host_key()
+        self.assertEqual(self.cli('start', 'agent01', '--ssh-config'), 0, self.output.getvalue())
+        self.assertTrue((self.home / '.ssh/sanboxed-agents/agent01/id_ed25519').exists())
+        self.assertEqual(self.cli('fingerprint', 'agent01'), 0, self.output.getvalue())
+        self.assertEqual(self.cli('shell', 'agent01'), 0, self.output.getvalue())
+        self.assertTrue(any(call[-1] == '/bin/bash' and '1000:1000' in call for call in self.calls))
+        self.assertEqual(self.cli('check-full', 'agent01'), 0, self.output.getvalue())
+        self.assertTrue(any(call[-2:] == ['/usr/local/bin/agent-smoke', '--full'] for call in self.calls))
+
+    def test_lifecycle_invalid_arguments_fail_before_runtime(self):
+        for args in [('stop',), ('remove', 'agent01', '--force'), ('start', 'agent01', '--volumes'),
+                     ('shell', 'agent01', 'extra'), ('restart', 'agent01', '--ssh-config', '--ssh-config')]:
+            self.calls.clear()
+            self.assertEqual(self.cli(*args), 1)
+            self.assertEqual(self.calls, [])
+
+    def test_remove_refuses_foreign_ssh_state_before_container_mutation(self):
+        state = self.home / '.ssh/sanboxed-agents/agent01'
+        state.mkdir(parents=True)
+        (state / 'owner.json').write_text(json.dumps({'project': 'foreign', 'name': 'agent01'}))
+        self.assertEqual(self.cli('remove', 'agent01'), 1)
+        self.assertFalse(any('stop' in call or 'rm' in call for call in self.calls))
+        self.assertTrue((state / 'owner.json').exists())
+
+    def test_remove_without_ssh_does_not_require_keygen_or_write_host_files(self):
+        with patch('shutil.which', side_effect=lambda name: None if name == 'ssh-keygen' else name):
+            self.assertEqual(self.cli('remove', 'agent01'), 0, self.output.getvalue())
+        self.assertFalse((self.home / '.ssh').exists())
+
+    def test_remove_volume_failure_cleans_obsolete_ssh_but_keeps_data(self):
+        from windows_paths import checkout_identity
+        self.prepare_host_key()
+        self.assertEqual(self.cli('ssh-config', 'agent01', '--install'), 0)
+        self.volumes['agent01-home'] = checkout_identity(PROJECT)
+        original = self.runner
+        def fail_volume(command, **kwargs):
+            if list(command[3:5]) == ['volume', 'rm']:
+                return subprocess.CompletedProcess(command, 43, '', 'volume in use')
+            return original(command, **kwargs)
+        with patch.object(self, 'runner', side_effect=fail_volume):
+            self.assertEqual(self.cli('remove', 'agent01', '--volumes'), 43, self.output.getvalue())
+        self.assertFalse((self.home / '.ssh/sanboxed-agents/agent01').exists())
+        self.assertIn('agent01-home', self.volumes)
 
     def test_build_preserves_extra_arguments_and_native_exit_code(self):
         self.assertEqual(self.cli('build', '--build-arg', 'VALUE=a b"c'), 0, self.output.getvalue())
