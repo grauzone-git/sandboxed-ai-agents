@@ -119,6 +119,8 @@ class UpdateTests(unittest.TestCase):
         self.assertIn('--no-cache', builds[0])
         creates = [c for c in self.calls if c[0] == 'create']
         self.assertEqual(len(creates), 2)
+        self.assertIn('agent01-home:/home/agent', creates[0])
+        self.assertIn('agent02-home:/home/agent', creates[1])
         self.assertIn('agent01-workspace:/workspace', creates[0])
         self.assertIn(f'{self.project}/workspaces/space in path:/workspace:Z', creates[1])
         self.assertIn('127.0.0.1:2200:2222', creates[0])

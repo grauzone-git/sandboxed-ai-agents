@@ -30,6 +30,8 @@ HELP = '''Usage:
   ./sandbox.ps1 agents NAME login codex|claude|opencode|copilot|hermes
   ./sandbox.ps1 tools NAME login github
   ./sandbox.ps1 tools NAME setup t3
+  ./sandbox.ps1 tools NAME setup azure [--interactive] [--cloud AzureCloud|AzureChinaCloud]
+      [--tenant TENANT] [--subscription SUBSCRIPTION | --tenant-only]
   ./sandbox.ps1 run NAME AGENT [arguments...]
   ./sandbox.ps1 tool NAME TOOL [arguments...]
   ./sandbox.ps1 copilot|claude|codex|hermes|opencode|t3|deepseek NAME

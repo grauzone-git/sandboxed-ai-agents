@@ -60,6 +60,13 @@ case "$action" in
         owned
         case "$operation" in
             login|setup)
+                if [[ $action == tools && $operation == setup && ${3:-} == azure ]]; then
+                    for argument in "${@:4}"; do
+                        if [[ $argument == --interactive ]]; then
+                            exec python3 -B "$ROOT/src/host/azure_auth.py" "$NAME" "${@:4}"
+                        fi
+                    done
+                fi
                 interactive=(-i)
                 [[ ! -t 0 || ! -t 1 ]] || interactive+=(-t)
                 exec podman exec "${interactive[@]}" --user 1000:1000 --workdir /workspace "$NAME" "/usr/local/bin/sandbox-$action" "$operation" "${@:3}"

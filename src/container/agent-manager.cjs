@@ -252,6 +252,9 @@ function createManager({
     run('tmux', ['-L', `sandbox-${kind}-terminals`, 'new-session', '-A', '-s', id === 'deepseek' ? 'deepseek-cli' : id, '-c', '/workspace', ...command]);
   }
   async function setup(id, ...extra) {
+    if (isTools && id === 'azure') {
+      return waitForChild(spawn('/opt/az/bin/python3', ['-B', '/usr/local/lib/sandbox-agents/azure_setup.py', ...extra], { env, stdio: 'inherit' }));
+    }
     if (isTools && id === 'azdo' && (extra.length === 0 || (extra.length === 1 && ['--persist', '--clear'].includes(extra[0])))) {
       return waitForChild(spawn('/bin/bash', ['/usr/local/lib/sandbox-agents/setup-azdo.sh', ...extra], { env, stdio: 'inherit' }));
     }

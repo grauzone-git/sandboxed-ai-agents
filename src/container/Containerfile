@@ -126,6 +126,7 @@ COPY prepare-hermes-dashboard.py /usr/local/lib/sandbox-agents/prepare-hermes-da
 COPY sandbox-agents /usr/local/bin/sandbox-agents
 COPY sandbox-agents /usr/local/bin/sandbox-tools
 COPY azdo.cjs azdo-settings.cjs setup-azdo.sh /usr/local/lib/sandbox-agents/
+COPY azure_setup.py azure_options.py azure_process.py azure_browser.py /usr/local/lib/sandbox-agents/
 RUN ln -s /usr/local/lib/sandbox-agents/azdo.cjs /usr/local/bin/sandbox-azdo
 # Existing Windows checkouts may still contain CRLF after pulling attributes.
 RUN sed -i 's/\r$//' /etc/ssh/sshd_config /etc/profile.d/agent-tools.sh \

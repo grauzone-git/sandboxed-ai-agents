@@ -117,6 +117,10 @@ async function test() {
   await assert.rejects(tools.setup('azdo', '--unknown'), /Usage/);
   await assert.rejects(agents.setup('azdo'), /Usage/);
   calls.length = 0;
+  await tools.setup('azure', '--tenant', 'tenant-1', '--tenant-only');
+  assert.equal(calls[0].command, '/opt/az/bin/python3');
+  assert.deepEqual(calls[0].args, ['-B', '/usr/local/lib/sandbox-agents/azure_setup.py', '--tenant', 'tenant-1', '--tenant-only']);
+  calls.length = 0;
   await assert.rejects(tools.login('codex'), /Usage: sandbox-tools login github/);
   await assert.rejects(tools.login('opencode'), /Usage: sandbox-tools login github/);
   await assert.rejects(tools.login('copilot'), /Usage: sandbox-tools login github/);

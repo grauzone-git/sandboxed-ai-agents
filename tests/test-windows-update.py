@@ -64,6 +64,8 @@ class WindowsUpdateTests(unittest.TestCase):
         self.assertFalse(self.engine.get('agent02')['State']['Running'])
         creates = [c for c in self.engine.calls if c[0] == 'create']
         self.assertEqual(len(creates), 2)
+        self.assertIn('agent01-home:/home/agent', creates[0])
+        self.assertIn('agent02-home:/home/agent', creates[1])
         self.assertIn('--cpus=1.5', creates[0])
         self.assertIn('--memory=123456789', creates[0])
         self.assertEqual(len([c for c in self.engine.calls if c[-1] == 'boot']), 4)
