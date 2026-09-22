@@ -2,6 +2,7 @@
 from dataclasses import dataclass
 import json
 import os
+from pathlib import Path
 import re
 import shutil
 import socket
@@ -10,6 +11,7 @@ import sys
 from windows_lifecycle import owned
 from windows_runtime import native
 from windows_ssh import SshSetup
+from azure_auth import interactive as azure_interactive, parse as azure_options
 
 SESSIONS = ('copilot', 'claude', 'codex', 'hermes', 'opencode', 'deepseek', 't3')
 COMMANDS = ('agents', 'tools', 'run', 'tool', 'service', 'forward', *SESSIONS)
@@ -62,6 +64,9 @@ def parse(action, args, project, validate_name, selections):
             selection = 'all'  # The manager interprets this as all enabled entries.
         return Command(name, action, [operation, selection])
     if action == 'tools' and operation == 'setup':
+        if len(args) >= 3 and args[2] == 'azure':
+            azure_options(args[3:])
+            return Command(name, action, args[1:], True)
         if (len(args) == 3 and args[2] in ('t3', 'azdo')) or (
                 len(args) == 4 and args[2] == 'azdo' and args[3] in ('--persist', '--clear')):
             return Command(name, action, args[1:], True)
@@ -87,6 +92,15 @@ def require_forward_port(port):
 
 def execute(runtime, project, command):
     identity = owned(runtime, project, command.name)['Id']
+    if command.manager == 'tools' and command.arguments[:2] == ['setup', 'azure']:
+        options = azure_options(command.arguments[2:])
+        if options.interactive:
+            state = Path.home() / '.ssh/sanboxed-agents' / command.name
+            if not (state / f'{command.name}.conf').is_file():
+                raise ValueError(f'Configure SSH first: ./sandbox.ps1 ssh-config {command.name} --install')
+            setup = SshSetup(runtime, project, command.name, require_keygen=False)
+            azure_interactive(command.name, setup.state / f'{command.name}.conf', command.arguments[2:])
+            return
     ssh = None
     config = None
     if command.forward:

@@ -203,6 +203,18 @@ else: sys.exit('Unexpected call: ' + repr(args))
                 self.assertFalse(any(call[0] == "run" or call[:2] == ["volume", "create"]
                                      for call in self.calls()))
 
+    def test_azure_host_transport_cannot_be_exposed_as_workspace(self):
+        script = self.checkout / 'src/host/azure_auth.py'
+        link = self.root / 'azure-link'
+        link.symlink_to(script)
+        for workspace in (script, link):
+            with self.subTest(workspace=workspace):
+                self.log.unlink(missing_ok=True)
+                result = self.cli('up', 'demo', str(workspace), '--agents', 'codex', success=False)
+                self.assertIn('host SSH/controller files', result.stderr)
+                self.assertFalse(any(call[0] == 'run' or call[:2] == ['volume', 'create']
+                                     for call in self.calls()))
+
 
 if __name__ == "__main__":
     unittest.main()

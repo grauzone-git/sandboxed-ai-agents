@@ -19,6 +19,8 @@ Usage:
   ./sandbox tools NAME login github
   ./sandbox tools NAME setup t3
   ./sandbox tools NAME setup azdo [--persist|--clear]
+  ./sandbox tools NAME setup azure [--interactive] [--cloud AzureCloud|AzureChinaCloud]
+      [--tenant TENANT] [--subscription SUBSCRIPTION | --tenant-only]
   ./sandbox tool NAME TOOL [arguments...]
   ./sandbox run NAME AGENT [arguments...]
   ./sandbox azdo NAME --pat-env -- devops COMMAND --organization URL [--project PROJECT]
@@ -44,6 +46,8 @@ Agent login requires an enabled agent: Codex/Copilot device code, Claude browser
 or OpenCode/Hermes interactive provider setup.
 GitHub login uses the built-in gh CLI and configures Git HTTPS credentials.
 Azure DevOps setup uses native az devops login unless --persist is supplied.
+Azure setup uses device code by default. --interactive opens the host browser
+through temporary loopback forwarding and requires opted-in managed SSH setup.
 With --persist, save the PAT as AZURE_DEVOPS_EXT_PAT for new sandbox sessions,
 without either login command. Both modes set the default organization.
 Setup --clear removes the saved environment PAT; restart existing sessions.
@@ -161,8 +165,12 @@ parse_cli_args() {
     case "$action" in
         agents|tools)
             if [[ ${2:-} == setup ]]; then
+                if [[ $action == tools && ${3:-} == azure ]]; then
+                    python3 -B "$ROOT/src/host/azure_auth.py" --validate "${@:4}" || exit $?
+                else
                 [[ $action == tools && ( ( $# -eq 3 && ( $3 == t3 || $3 == azdo ) ) || ( $# -eq 4 && $3 == azdo && ( $4 == --persist || $4 == --clear ) ) ) ]] \
                     || fail 'Usage: ./sandbox tools NAME setup t3, or setup azdo [--persist|--clear].'
+                fi
             fi
             if [[ ${2:-} == login ]]; then
                 if [[ $action == tools ]]; then

@@ -483,6 +483,10 @@ class WindowsCliTests(unittest.TestCase):
             (('tools', 'agent01', 'setup', 'azdo'), 'tools', ['setup', 'azdo']),
             (('tools', 'agent01', 'setup', 'azdo', '--persist'), 'tools', ['setup', 'azdo', '--persist']),
             (('tools', 'agent01', 'setup', 'azdo', '--clear'), 'tools', ['setup', 'azdo', '--clear']),
+            (('tools', 'agent01', 'setup', 'azure', '--tenant', 'tenant-1', '--subscription', 'My subscription'),
+             'tools', ['setup', 'azure', '--tenant', 'tenant-1', '--subscription', 'My subscription']),
+            (('tools', 'agent01', 'setup', 'azure', '--cloud', 'AzureChinaCloud', '--tenant-only'),
+             'tools', ['setup', 'azure', '--cloud', 'AzureChinaCloud', '--tenant-only']),
             (('run', 'agent01', 'codex', 'space and "quote"', '', '$literal;value'),
              'agents', ['run', 'codex', 'space and "quote"', '', '$literal;value']),
             (('tool', 'agent01', 't3', '--help'), 'tools', ['run', 't3', '--help']),
@@ -507,6 +511,8 @@ class WindowsCliTests(unittest.TestCase):
                    ('tools', 'agent01', 'setup', 't3', '--persist'),
                    ('tools', 'agent01', 'setup', 'azdo', '--unknown'),
                    ('tools', 'agent01', 'setup', 'azdo', '--persist', '--clear'),
+                   ('tools', 'agent01', 'setup', 'azure', '--persist'),
+                   ('tools', 'agent01', 'setup', 'azure', '--cloud', 'unsupported'),
                    ('run', 'agent01'), ('tool', 'agent01', 'not-a-tool')]
         for arguments in invalid:
             self.calls.clear()
@@ -518,6 +524,12 @@ class WindowsCliTests(unittest.TestCase):
         self.owner_override = None
         self.native_failure = ('exec', 39)
         self.assertEqual(self.cli('agents', 'agent01', 'check'), 39)
+
+    def test_azure_browser_setup_requires_explicit_ssh_before_login(self):
+        self.assertEqual(self.cli('tools', 'agent01', 'setup', 'azure', '--interactive'), 1)
+        self.assertIn('./sandbox.ps1 ssh-config agent01 --install', self.output.getvalue())
+        self.assertFalse((self.home / '.ssh').exists())
+        self.assertFalse(any('exec' in call for call in self.calls))
 
     def test_forward_refuses_occupied_port_before_service_or_ssh(self):
         self.prepare_host_key()

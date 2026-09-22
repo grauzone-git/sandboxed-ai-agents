@@ -213,6 +213,7 @@ report a vulnerability.
 ./sandbox azdo NAME --pat-env -- devops project list --organization URL
 ./sandbox tools NAME setup t3                 # T3 Connect sign-in and activation
 ./sandbox tools NAME setup azdo [--persist|--clear] # PAT and default organization
+./sandbox tools NAME setup azure [--interactive] # independent Azure session
 ./sandbox run NAME AGENT [args...]          # one-off command
 ./sandbox tool NAME TOOL [args...]          # one-off tool command
 ./sandbox copilot|claude|codex|hermes|opencode|deepseek|t3 NAME   # persistent terminal
@@ -240,6 +241,7 @@ Start with the [Linux quick guide](docs/QUICKGUIDE-LINUX.md) or the
 | Connect, forward ports, stop, upgrade, or remove a sandbox | [Sandbox lifecycle and SSH](docs/SANDBOXES.md) |
 | Pick agents, sign in, pin versions, run dashboards | [Agents and tools](docs/AGENT-SETUP.md) |
 | Configure the image, .NET, npm, Playwright, Git, Azure | [Development toolchain](docs/TOOLCHAIN.md) |
+| Configure sandbox Azure login on Linux or native Windows | [Azure setup](docs/AZURE-SETUP.md) |
 | Understand isolation, desktop UIs, and remote workers | [Architecture](docs/ARCHITECTURE.md) |
 | Know why it is built this way before changing it | [Project context](CONTEXT.md) |
 | Work on this repository as an AI coding agent | [AGENT.md](AGENT.md) |

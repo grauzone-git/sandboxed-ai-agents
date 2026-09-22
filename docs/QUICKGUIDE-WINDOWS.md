@@ -106,6 +106,11 @@ can prompt for authorization. Agent aliases and `t3` reconnect persistent
 sessions; `run`/`tool` pass additional arguments to the selected executable.
 
 Azure DevOps setup accepts `--persist` or `--clear` after `azdo`.
+Azure CLI setup uses `./sandbox.ps1 tools agent01 setup azure`; add `--interactive`
+for the native host browser, `--cloud AzureChinaCloud` for China, and explicit
+`--tenant` plus `--subscription` or `--tenant-only` as needed. Device code is the
+default. Browser setup requires opted-in managed SSH. See
+[Azure setup](AZURE-SETUP.md) for lifecycle behavior and pending live validation.
 See [Azure DevOps authentication](TOOLCHAIN.md#set-up-azure-devops) for the credential storage options.
 
 Non-interactive output supports PowerShell assignment and pipelines, for example

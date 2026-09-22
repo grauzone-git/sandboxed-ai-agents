@@ -124,7 +124,7 @@ else process.exit(1); // No image/container: stop before creation in positive pa
       fs.unlinkSync(transportLog);
     }
   }
-  for (const target of [['t3'], ['azdo'], ['azdo', '--persist'], ['azdo', '--clear']]) {
+  for (const target of [['t3'], ['azdo'], ['azdo', '--persist'], ['azdo', '--clear'], ['azure'], ['azure', '--tenant', 'tenant-1', '--tenant-only']]) {
     for (const exitCode of [0, 7]) {
       assert.equal(cli(['tools', 'demo', 'setup', ...target], { TEST_LOGIN_EXIT: String(exitCode) }).status, exitCode);
       const calls = fs.readFileSync(transportLog, 'utf8').trim().split('\n').map(JSON.parse);
