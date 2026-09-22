@@ -139,6 +139,8 @@ The runner records source revision, image ID, host and CLI versions, and checks:
 
 - Browser login and read-only ARM access after setup closes the callback tunnel.
 - Access from fresh SSH sessions after stop/start and update retaining the home.
+  The runner waits up to 60 seconds for pinned SSH access before probing Azure;
+  it retries only the SSH readiness command, never an Azure operation.
 - Renewal after the recorded token expiry plus one minute. Leave the sandbox
   idle during the wait and confirm no intervening commands or login.
 - Cancelled replacement: press Ctrl+C in the runner terminal after the browser
@@ -169,7 +171,8 @@ again for each successful mode's Azure replacement.
 Results are saved after every check in a new `azure-auth-test-*.json` file, or
 at `--report PATH`. Existing reports are never overwritten. The report contains
 only selected metadata, expiry times, counts, and outcomes, not raw Azure error
-output or tokens. A failure or interruption returns exit 1 and retains the
+output or tokens. Failed checks identify the operation, exit code when available,
+and failure type so lifecycle, SSH, and Azure probe failures remain distinct. A failure or interruption returns exit 1 and retains the
 sandbox for inspection. Successful runs remove their sandbox and volumes unless
 `--keep-sandbox` is supplied. Remove a retained disposable sandbox with
 `./sandbox remove NAME --volumes` (use `./sandbox.ps1` on Windows).
