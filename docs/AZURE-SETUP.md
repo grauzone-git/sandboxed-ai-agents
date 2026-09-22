@@ -144,7 +144,8 @@ completion evidence for issues #25, #26, or #27.
    az cloud show --query name --output tsv
    az account show --query 'user.type' --output tsv
    az account get-access-token --query expires_on --output tsv
-   az rest --method get --url "$(az cloud show --query endpoints.resourceManager --output tsv)tenants?api-version=2020-01-01" --output none
+   azure_arm_endpoint="$(az cloud show --query endpoints.resourceManager --output tsv)"
+   az rest --method get --url "${azure_arm_endpoint%/}/tenants?api-version=2020-01-01" --output none
    ```
 
    Record the expiry epoch and whether token issuance and read-only ARM access
