@@ -93,6 +93,7 @@ Both `agents` and `tools` support `list` (the default), `check`, and
 .\sandbox.ps1 agents agent01 update all
 .\sandbox.ps1 tools agent01 set t3
 .\sandbox.ps1 tools agent01 setup t3
+.\sandbox.ps1 tools agent01 setup azdo
 .\sandbox.ps1 tools agent01 login github
 .\sandbox.ps1 run agent01 codex --help
 .\sandbox.ps1 tool agent01 t3 --help
@@ -100,9 +101,12 @@ Both `agents` and `tools` support `list` (the default), `check`, and
 
 `update all` updates only enabled entries. `set none` disables the selection,
 retaining cached installs and credentials. Login supports Codex, Claude,
-OpenCode, Copilot, and Hermes; GitHub login and T3 setup use `tools`. Login/setup
+OpenCode, Copilot, and Hermes; GitHub login, T3 setup, and Azure DevOps setup use `tools`. Login/setup
 can prompt for authorization. Agent aliases and `t3` reconnect persistent
 sessions; `run`/`tool` pass additional arguments to the selected executable.
+
+Azure DevOps setup accepts `--persist` or `--clear` after `azdo`.
+See [Azure DevOps authentication](TOOLCHAIN.md#set-up-azure-devops) for the credential storage options.
 
 Non-interactive output supports PowerShell assignment and pipelines, for example
 `$listing = .\sandbox.ps1 agents agent01 list`. Native stderr is displayed as

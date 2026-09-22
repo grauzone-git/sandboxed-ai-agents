@@ -61,13 +61,16 @@ def parse(action, args, project, validate_name, selections):
         if operation == 'update' and args[2] == 'all':
             selection = 'all'  # The manager interprets this as all enabled entries.
         return Command(name, action, [operation, selection])
+    if action == 'tools' and operation == 'setup':
+        if (len(args) == 3 and args[2] in ('t3', 'azdo')) or (
+                len(args) == 4 and args[2] == 'azdo' and args[3] in ('--persist', '--clear')):
+            return Command(name, action, args[1:], True)
+        raise ValueError('Use tools NAME setup t3, or setup azdo [--persist|--clear].')
     if len(args) == 3:
         allowed = ('codex', 'claude', 'opencode', 'copilot', 'hermes') if action == 'agents' else ('github',)
         if operation == 'login' and args[2] in allowed:
             return Command(name, action, ['login', args[2]], True)
-        if action == 'tools' and operation == 'setup' and args[2] == 't3':
-            return Command(name, action, ['setup', 't3'], True)
-    raise ValueError(f'Invalid {action} operation or arguments; use list, check, set, enable, disable, update, login, or tools setup t3.')
+    raise ValueError(f'Invalid {action} operation or arguments; use list, check, set, enable, disable, update, login, or tools setup t3|azdo.')
 
 
 def require_forward_port(port):

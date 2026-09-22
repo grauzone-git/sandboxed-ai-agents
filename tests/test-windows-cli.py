@@ -480,6 +480,9 @@ class WindowsCliTests(unittest.TestCase):
             (('agents', 'agent01', 'login', 'copilot'), 'agents', ['login', 'copilot']),
             (('tools', 'agent01', 'login', 'github'), 'tools', ['login', 'github']),
             (('tools', 'agent01', 'setup', 't3'), 'tools', ['setup', 't3']),
+            (('tools', 'agent01', 'setup', 'azdo'), 'tools', ['setup', 'azdo']),
+            (('tools', 'agent01', 'setup', 'azdo', '--persist'), 'tools', ['setup', 'azdo', '--persist']),
+            (('tools', 'agent01', 'setup', 'azdo', '--clear'), 'tools', ['setup', 'azdo', '--clear']),
             (('run', 'agent01', 'codex', 'space and "quote"', '', '$literal;value'),
              'agents', ['run', 'codex', 'space and "quote"', '', '$literal;value']),
             (('tool', 'agent01', 't3', '--help'), 'tools', ['run', 't3', '--help']),
@@ -500,6 +503,10 @@ class WindowsCliTests(unittest.TestCase):
         invalid = [('agents',), ('agents', 'agent01', 'set', 'bad'),
                    ('tools', 'agent01', 'list', 'extra'), ('agents', 'agent01', 'login', 'deepseek'),
                    ('tools', 'agent01', 'setup', 'github'), ('copilot', 'agent01', '--help'),
+                   ('agents', 'agent01', 'setup', 'azdo'), ('tools', 'agent01', 'setup'),
+                   ('tools', 'agent01', 'setup', 't3', '--persist'),
+                   ('tools', 'agent01', 'setup', 'azdo', '--unknown'),
+                   ('tools', 'agent01', 'setup', 'azdo', '--persist', '--clear'),
                    ('run', 'agent01'), ('tool', 'agent01', 'not-a-tool')]
         for arguments in invalid:
             self.calls.clear()
