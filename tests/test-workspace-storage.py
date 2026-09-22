@@ -82,6 +82,16 @@ else: sys.exit('Unexpected call: ' + repr(args))
         self.assertEqual(json.loads(self.state.read_text()), {})
         self.assertFalse(any(call[0] == 'run' for call in self.calls()))
 
+    def test_live_azure_validation_files_are_protected_before_provisioning(self):
+        tests = self.checkout / 'tests'
+        tests.mkdir()
+        for name in ('live-azure-auth.py', 'azure-auth-probe.py'):
+            entry = tests / name
+            entry.write_text('# Host-run Azure validation')
+            self.cli('up', 'demo', str(entry), '--agents', 'codex', success=False)
+        self.assertEqual(json.loads(self.state.read_text()), {})
+        self.assertFalse(any(call[0] == 'run' for call in self.calls()))
+
     def test_omitted_workspace_and_name_use_only_named_volumes(self):
         self.cli("up", "--agents", "codex")
         run = next(call for call in self.calls() if call[0] == "run")
