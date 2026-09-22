@@ -110,6 +110,82 @@ Its cause remains unknown. Actual policy-triggered recovery remains unverified
 and is not a release blocker; automated classification tests do not reproduce
 tenant policy.
 
+## Live validation runner
+
+`tests/live-azure-auth.py` runs the acceptance sequence on the host where you
+invoke it. Run it separately on Linux and native Windows, once per cloud. It
+uses Python 3.9+ and the existing launcher, OpenSSH, Podman, and browser setup.
+Build a current image first. No host Azure login is needed.
+
+Linux host:
+
+```bash
+python3 -B tests/live-azure-auth.py --azure-environment AzureCloud --tenant-id TENANT --image localhost/azure-auth-validation:102276b
+```
+
+Native Windows PowerShell:
+
+```powershell
+python -B tests/live-azure-auth.py --azure-environment AzureChinaCloud --tenant-id TENANT --image localhost/azure-auth-validation:102276b
+```
+
+Replace the image tag with your current validation image. The runner does not
+build or pull it. `--ssh-port` defaults to `2299`; select a free port if needed.
+`--agents` defaults to `codex`. Each run creates a unique disposable sandbox
+with named volumes and explicitly opts into managed SSH configuration. It never
+selects an existing working sandbox.
+
+The runner records source revision, image ID, host and CLI versions, and checks:
+
+- Browser login and read-only ARM access after setup closes the callback tunnel.
+- Access from fresh SSH sessions after stop/start and update retaining the home.
+- Renewal after the recorded token expiry plus one minute. Leave the sandbox
+  idle during the wait and confirm no intervening commands or login.
+- Cancelled replacement: press Ctrl+C in the runner terminal after the browser
+  opens, before completing sign-in. The runner checks exit 130 and retained
+  Azure access, then asks for fresh sign-in for the remembered-cloud check.
+- Explicit fresh sign-in without `--cloud`, verifying the remembered cloud.
+- Logout and failure of an ordinary account check afterward.
+
+Optional DevOps checks need an organization and PAT:
+
+```bash
+python3 -B tests/live-azure-auth.py --azure-environment AzureCloud --tenant-id TENANT --azdo-organization https://dev.azure.com/ORGANIZATION --azdo-pat
+```
+
+`--azdo-pat` takes no value: it prompts without echoing input. Alternatively,
+`--azdo-pat-env VARIABLE_NAME` reads an existing environment variable. Never put
+the PAT itself in command arguments. The runner sends it over pinned SSH stdin,
+not in remote arguments, and omits it from results. Organization and tenant
+values are also omitted from the report.
+
+DevOps checks try native credential storage and saved-PAT mode separately. Each
+mode checks default organization and project-list access before and after Azure
+replacement and logout. Saved-PAT mode additionally checks `sandbox-azdo` with
+its isolated Azure configuration. Native credential-store setup failure remains
+a failed check even if saved-PAT checks succeed. Browser interaction is needed
+again for each successful mode's Azure replacement.
+
+Results are saved after every check in a new `azure-auth-test-*.json` file, or
+at `--report PATH`. Existing reports are never overwritten. The report contains
+only selected metadata, expiry times, counts, and outcomes, not raw Azure error
+output or tokens. A failure or interruption returns exit 1 and retains the
+sandbox for inspection. Successful runs remove their sandbox and volumes unless
+`--keep-sandbox` is supplied. Remove a retained disposable sandbox with
+`./sandbox remove NAME --volumes` (use `./sandbox.ps1` on Windows).
+
+`--skip-renewal` and `--skip-cancellation` permit shorter runs and record those
+checks as skipped. Exit 0 means the executed checks passed; it does not mean
+skipped checks passed or that both host/cloud combinations were validated.
+Without PAT options, DevOps checks are explicitly skipped. The runner does not
+update GitHub checkboxes automatically. Review its report before recording
+acceptance evidence. Device-code login, subscription selection, failed
+cross-cloud replacement, and policy-triggered recovery remain separate checks.
+
+The live runner is not part of `./tests/run`. Its offline regression tests run
+without Podman, network access, or credentials. Offline tests do not establish
+that the new runner has completed a real sign-in.
+
 ## Disposable sandbox validation
 
 Run these checks as a human using disposable sandboxes only. Never use a working
