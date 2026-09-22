@@ -24,9 +24,17 @@ def utc():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
+class CommandFailure(RuntimeError):
+    """Keep command status without retaining potentially sensitive process output."""
+    def __init__(self, returncode):
+        super().__init__('Command failed; raw output was not saved.')
+        self.returncode = returncode
+
+
 class Validation:
     def __init__(self, options):
         self.options = options
+        self.operation = 'initialize'
         self.name = 'azure-auth-test-' + uuid.uuid4().hex[:12]
         self.report = Path(options.report or (self.name + '.json')).absolute()
         self.env = dict(os.environ, SANDBOX_IMAGE=options.image, SANDBOX_PYTHON=sys.executable)
@@ -54,18 +62,39 @@ class Validation:
                                 text=True, encoding='utf-8', capture_output=not interactive, timeout=timeout)
         if result.returncode:
             # Provider/transport output can contain credentials or authorization URLs.
-            raise ValueError(f'Command failed with exit code {result.returncode}; raw output was not saved.')
+            raise CommandFailure(result.returncode)
         return result.stdout or ''
 
     def sandbox(self, *args, interactive=False):
+        self.operation = 'azure_setup' if args[0] == 'tools' else args[0]
         return self.execute([*self.launcher, *args], interactive=interactive, timeout=1200)
 
-    def remote(self, action, **payload):
+    def ssh_command(self, command):
         config = Path.home() / '.ssh/sanboxed-agents' / self.name / (self.name + '.conf')
         args = ['ssh', '-F', str(config), '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
                 '-o', 'ForwardAgent=no', '-o', 'ForwardX11=no', '-o', 'IdentityAgent=none',
                 '-o', 'ControlMaster=no', '-o', 'ControlPath=none', '-o', 'ConnectTimeout=10', self.name,
-                shlex.join(['/bin/bash', '-lc', shlex.join(['/opt/az/bin/python3', '-B', '-c', PROBE.read_text(encoding='utf-8')])])]
+                command]
+        return args
+
+    def wait_for_ssh(self):
+        self.operation = 'ssh_readiness'
+        deadline = time.monotonic() + 60
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError('SSH did not become ready within 60 seconds.')
+            try:
+                self.execute(self.ssh_command('true'), timeout=min(15, remaining))
+                return
+            except (CommandFailure, subprocess.TimeoutExpired):
+                time.sleep(min(1, max(0, deadline - time.monotonic())))
+
+    def remote(self, action, **payload):
+        self.operation = 'ssh_' + action
+        command = shlex.join(['/bin/bash', '-lc', shlex.join([
+            '/opt/az/bin/python3', '-B', '-c', PROBE.read_text(encoding='utf-8')])])
+        args = self.ssh_command(command)
         return json.loads(self.execute(args, input=json.dumps(dict(action=action, **payload))))
 
     def probe(self, check):
@@ -131,7 +160,7 @@ class Validation:
             check = 'azdo_' + mode
             try:
                 self.remote('azdo_setup', mode=mode, organization=self.options.azdo_organization, pat=pat)
-            except ValueError:
+            except (ValueError, CommandFailure):
                 self.record(check + '_setup', 'failed', reason='DevOps setup failed; credential-store installation or service access may be unavailable.')
                 continue
             self.record(check + '_setup', 'passed')
@@ -167,6 +196,7 @@ class Validation:
                          '--agents', self.options.agents, '--ssh-config')
             self.record(stage, 'passed')
             stage = 'versions'
+            self.wait_for_ssh()
             self.versions()
             stage = 'initial_login'
             self.login()
@@ -174,9 +204,11 @@ class Validation:
             stage = 'restart'
             self.sandbox('stop', self.name)
             self.sandbox('start', self.name)
+            self.wait_for_ssh()
             self.probe(stage)
             stage = 'recreation'
             self.sandbox('update', self.name, '--no-build')
+            self.wait_for_ssh()
             baseline = self.probe(stage)
             stage = 'renewal'
             if self.options.skip_renewal:
@@ -217,8 +249,10 @@ class Validation:
             else:
                 self.record('cleanup', 'skipped', reason='Sandbox retained by request or because a check failed.')
             return 1 if failed else 0
-        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError, KeyboardInterrupt, EOFError):
-            self.record(stage, 'failed', reason='Check failed or was interrupted; sandbox retained for inspection.')
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError, KeyboardInterrupt, EOFError) as error:
+            self.record(stage, 'failed', reason='Check failed or was interrupted; sandbox retained for inspection.',
+                        operation=self.operation, exit_code=getattr(error, 'returncode', None),
+                        failure_type=type(error).__name__)
             print('Validation stopped. Raw provider output was not retained.', file=sys.stderr)
             return 1
 

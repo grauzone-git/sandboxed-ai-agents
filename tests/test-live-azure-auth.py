@@ -86,7 +86,7 @@ class AzureLiveRunnerTests(unittest.TestCase):
             calls = []
             def run(args, **kwargs):
                 calls.append(args)
-                if args[0] == 'ssh' and 'input' in kwargs:
+                if args[0] == 'ssh' and kwargs.get('input') is not None:
                     action = json.loads(kwargs['input'])['action']
                     data = ({'expires_on': 4102444800, 'cloud': 'AzureChinaCloud', 'arm_exit_code': 0}
                             if action == 'azure' else {'logged_out': True})
@@ -120,7 +120,7 @@ class AzureLiveRunnerTests(unittest.TestCase):
             def run(args, **kwargs):
                 self.assertNotIn('SECRET-PAT', ' '.join(args))
                 self.assertNotIn('TEST_AZDO_PAT', kwargs.get('env', {}))
-                if args[0] == 'ssh' and 'input' in kwargs:
+                if args[0] == 'ssh' and kwargs.get('input') is not None:
                     payload = json.loads(kwargs['input'])
                     actions.append(payload)
                     if payload['action'] == 'azdo_setup' and payload['mode'] == 'native':
@@ -176,7 +176,7 @@ class AzureLiveRunnerTests(unittest.TestCase):
                 probes = []
                 def run(args, **kwargs):
                     data = {}
-                    if args[0] == 'ssh' and 'input' in kwargs and json.loads(kwargs['input'])['action'] == 'azure':
+                    if args[0] == 'ssh' and kwargs.get('input') is not None and json.loads(kwargs['input'])['action'] == 'azure':
                         probes.append(1)
                         data = {'expires_on': expiry if len(probes) == 4 else 1000}
                     return subprocess.CompletedProcess(args, 0, json.dumps(data), '')
@@ -212,6 +212,77 @@ class AzureLiveRunnerTests(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertTrue(kill.called)
             self.assertEqual(child.wait.call_count, 3)
+
+    def test_restart_waits_for_ssh_before_running_azure_probe(self):
+        spec = importlib.util.spec_from_file_location('live_azure', PROBE.with_name('live-azure-auth.py'))
+        runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runner)
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / 'result.json'
+            pending = 0
+            def run(args, **kwargs):
+                nonlocal pending
+                if 'start' in args:
+                    pending = 2
+                if args[0] == 'ssh' and args[-1] == 'true' and pending:
+                    pending -= 1
+                    return subprocess.CompletedProcess(args, 255, '', 'Connection refused')
+                if args[0] == 'ssh' and kwargs.get('input'):
+                    if pending:
+                        return subprocess.CompletedProcess(args, 255, '', 'Connection refused')
+                    return subprocess.CompletedProcess(args, 0, json.dumps({'expires_on': 4102444800}), '')
+                return subprocess.CompletedProcess(args, 0, '{}', '')
+            with patch.object(runner.subprocess, 'run', side_effect=run), \
+                    patch.object(runner.time, 'sleep'), \
+                    contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                code = runner.main(['--tenant-id', 'tenant', '--skip-renewal', '--skip-cancellation',
+                                    '--report', str(report)])
+            self.assertEqual(code, 0, report.read_text())
+            checks = {item['check']: item['status'] for item in json.loads(report.read_text())['checks']}
+            self.assertEqual(checks['restart'], 'passed')
+
+    def test_restart_failures_identify_operation_and_do_not_retry_azure(self):
+        spec = importlib.util.spec_from_file_location('live_azure', PROBE.with_name('live-azure-auth.py'))
+        runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runner)
+        for failure, operation, exit_code in [('stop', 'stop', 125), ('ssh', 'ssh_readiness', None), ('azure', 'ssh_azure', 1)]:
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
+                report = Path(directory) / 'result.json'
+                restarted = False
+                azure_calls = 0
+                clock = 0
+                calls = []
+                def monotonic():
+                    nonlocal clock
+                    clock += 5
+                    return clock
+                def run(args, **kwargs):
+                    nonlocal restarted, azure_calls
+                    calls.append(args)
+                    if failure == 'stop' and 'stop' in args:
+                        return subprocess.CompletedProcess(args, 125, '', 'sensitive provider details')
+                    if 'start' in args:
+                        restarted = True
+                    if args[0] == 'ssh' and args[-1] == 'true' and restarted and failure == 'ssh':
+                        return subprocess.CompletedProcess(args, 255, '', 'sensitive provider details')
+                    if args[0] == 'ssh' and kwargs.get('input'):
+                        if json.loads(kwargs['input'])['action'] == 'azure':
+                            azure_calls += 1
+                            if restarted and failure == 'azure':
+                                return subprocess.CompletedProcess(args, 1, '', 'sensitive provider details')
+                        return subprocess.CompletedProcess(args, 0, json.dumps({'expires_on': 4102444800}), '')
+                    return subprocess.CompletedProcess(args, 0, '{}', '')
+                with patch.object(runner.subprocess, 'run', side_effect=run), \
+                        patch.object(runner.time, 'sleep'), patch.object(runner.time, 'monotonic', side_effect=monotonic), \
+                        contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    code = runner.main(['--tenant-id', 'tenant', '--skip-renewal', '--skip-cancellation', '--report', str(report)])
+                self.assertEqual(code, 1)
+                failed = json.loads(report.read_text())['checks'][-1]
+                self.assertEqual(failed['operation'], operation)
+                self.assertEqual(failed['exit_code'], exit_code)
+                self.assertEqual(azure_calls, 2 if failure == 'azure' else 1)
+                self.assertFalse(any('remove' in args for args in calls))
+                self.assertNotIn('sensitive provider details', report.read_text())
 
 
 if __name__ == '__main__':
