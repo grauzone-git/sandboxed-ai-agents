@@ -190,7 +190,18 @@ class CLI:
         config = configparser.ConfigParser()
         config.read(root / 'config')
         authority = 'login.chinacloudapi.cn' if config.get('cloud', 'name') == 'AzureChinaCloud' else 'login.microsoftonline.com'
-        webbrowser.open('https://' + authority + '/tenant/oauth2/v2.0/authorize?redirect_uri=http%3A%2F%2Flocalhost%3A45678&response_type=code&state=dummy')
+        url = 'https://' + authority + '/tenant/oauth2/v2.0/authorize?redirect_uri=http%3A%2F%2Flocalhost%3A45678&response_type=code&state=dummy'
+        # MSAL 1.36 explicitly selects installed Edge on Linux unless BROWSER
+        # states another preference, bypassing webbrowser's preferred adapter.
+        if 'BROWSER' not in os.environ or 'microsoft-edge' in os.environ['BROWSER']:
+            class Edge(webbrowser.BaseBrowser):
+                def open(self, *args, **kwargs):
+                    (Path.home() / 'local-browser-launched').touch()
+                    return True
+            webbrowser.register('msal-edge', None, Edge())
+            webbrowser.get('msal-edge').open(url)
+        else:
+            webbrowser.open(url)
         (root / 'msal_token_cache.json').write_text('browser-session')
         (root / 'azureProfile.json').write_text('{"id":"subscription-1", "tenantId":"tenant-1"}')
         return 0
@@ -199,14 +210,18 @@ def get_default_cli(): return CLI()
         self.assertEqual(self.setup().returncode, 0)
         for commit in (False, True):
             with self.subTest(commit=commit):
+                browser_env = {key: value for key, value in self.env.items() if key != 'BROWSER'}
+                if commit:
+                    browser_env['BROWSER'] = 'microsoft-edge'
                 child = subprocess.Popen([sys.executable, '-B', str(PROJECT / 'src/container/azure_setup.py'),
                                           '--host-protocol', '--interactive', '--tenant', 'tenant-1',
                                           '--subscription', 'subscription-1', '--cloud', 'AzureChinaCloud'],
-                                         env={**self.env, 'PYTHONPATH': str(self.home)},
+                                         env={**browser_env, 'PYTHONPATH': str(self.home)},
                                          stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
                 try:
                     event = json.loads(child.stdout.readline())
                     self.assertEqual(event['event'], 'browser')
+                    self.assertFalse((self.home / 'local-browser-launched').exists())
                     self.assertIn('login.chinacloudapi.cn', event['value'])
                     self.assertEqual(json.loads(child.stdout.readline())['event'], 'ready')
                     self.assertEqual((self.home / '.azure/msal_token_cache.json').read_text(), 'new-session')

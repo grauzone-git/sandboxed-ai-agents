@@ -1,5 +1,6 @@
 """Pass the CLI browser request in memory without placing its URL in argv."""
 import json
+import os
 import sys
 import webbrowser
 
@@ -15,6 +16,9 @@ if __name__ == '__main__':
     # callback validation, token storage, and renewal; this only transports a URL.
     # CLI checks webbrowser.get() before MSAL opens the URL. Registration makes
     # the transport discoverable in a headless image, preventing device fallback.
+    # MSAL otherwise explicitly selects installed Edge, bypassing preferred
+    # controllers. This preference applies only to the setup child process.
+    os.environ['BROWSER'] = 'sandbox-host'
     webbrowser.register('sandbox-host', None, HostBrowser(), preferred=True)
     from azure.cli.core import get_default_cli
     sys.exit(get_default_cli().invoke(sys.argv[1:]))
