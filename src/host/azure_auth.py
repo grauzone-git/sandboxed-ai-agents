@@ -281,6 +281,7 @@ if __name__ == '__main__':
     except ValueError as error:
         sys.exit(f'Error: {error}')
     except (KeyboardInterrupt, EOFError):
-        sys.exit('Error: Azure setup cancelled. Retry explicit setup when ready.')
+        print('Error: Azure setup cancelled. Retry explicit setup when ready.', file=sys.stderr)
+        sys.exit(130)
     except (OSError, RuntimeError, subprocess.TimeoutExpired):
         sys.exit('Error: Azure browser setup failed. Check SSH, local port availability, and your default browser, then retry --interactive.')
