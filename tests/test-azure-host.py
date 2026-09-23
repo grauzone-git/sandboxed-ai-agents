@@ -6,6 +6,8 @@ import io
 import json
 import os
 import socket
+import signal
+import shutil
 import subprocess
 import tempfile
 import time
@@ -155,6 +157,40 @@ else:
             self.run_login(timeout=0.7, extra={'AZURE_TEST_NO_READY': '1'})
         self.assertFalse((self.root / 'browser-opened').exists())
         self.assertTrue(all(child.poll() is not None for child in self.children))
+
+    @unittest.skipIf(os.name == 'nt', 'Exercise the Linux CLI signal exit status')
+    def test_linux_cli_ctrl_c_closes_transport_and_returns_130(self):
+        home = self.root / 'home'
+        state = home / '.ssh/sanboxed-agents/demo'
+        state.mkdir(parents=True)
+        for filename in ('demo.conf', 'known_hosts', 'id_ed25519'):
+            shutil.copy2(self.root / filename, state / filename)
+        opener = self.root / 'xdg-open'
+        opener.write_text('#!/usr/bin/env python3\nimport os\nfrom pathlib import Path\n'
+                          "(Path(os.environ['AZURE_TEST_ROOT']) / 'browser-opened').touch()\n")
+        opener.chmod(0o755)
+        env = {**os.environ, 'HOME': str(home), 'PATH': str(self.root) + os.pathsep + os.environ['PATH'],
+               'AZURE_TEST_ROOT': str(self.root), 'AZURE_TEST_PORT': str(self.port),
+               'AZURE_TEST_URL': self.url(redirect=f'http://localhost:{self.port}'),
+               'AZURE_TEST_CLOUD': 'AzureCloud', 'AZURE_TEST_HANG': '1'}
+        child = subprocess.Popen([sys.executable, '-B', str(PROJECT / 'src/host/azure_auth.py'),
+                                  'demo', '--interactive', '--cloud', 'AzureCloud', '--tenant', 'tenant',
+                                  '--tenant-only'], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 text=True, start_new_session=True)
+        try:
+            deadline = time.monotonic() + 10
+            while not (self.root / 'browser-opened').exists() and child.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.02)
+            self.assertTrue((self.root / 'browser-opened').exists(), 'Fake browser did not open')
+            child.send_signal(signal.SIGINT)
+            stdout, stderr = child.communicate(timeout=10)
+            self.assertEqual(child.returncode, 130, stdout + stderr)
+            self.assertTrue((self.root / 'login-closed').exists())
+            self.assertTrue((self.root / 'forward-closed').exists())
+        finally:
+            if child.poll() is None:
+                os.killpg(child.pid, signal.SIGKILL)
+            child.communicate(timeout=5)
 
     def test_missing_ssh_opt_in_prints_exact_command(self):
         self.config.unlink()
