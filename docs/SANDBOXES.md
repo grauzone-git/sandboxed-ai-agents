@@ -38,6 +38,17 @@ Stopping kills every running process, tmux sessions included. Starting brings
 back the saved agent and tool selections along with any enabled tool services.
 Files in the named volumes and the workspace survive both.
 
+To see which sandboxes this checkout owns:
+
+```bash
+./sandbox list
+```
+
+It prints each sandbox's name, state, SSH port, enabled agents, and workspace
+(named volume or bind path). Sandboxes created from another checkout are not
+shown. Enabled agents are read from the sandbox home, so a stopped sandbox shows
+`-`; `list` never starts or changes a container.
+
 ## Choose workspace storage
 
 Leave the workspace directory out and the launcher creates or reuses the named

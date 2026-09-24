@@ -14,6 +14,10 @@ readarray -d '' -t normalized < <(python3 -B "$ROOT/src/host/grammar.py" ./sandb
 unset 'normalized[-1]'
 parse_cli_args "${normalized[@]}"
 set -- "${CLI_ARGS[@]}"
+if [[ $action == list ]]; then
+    require_podman
+    exec python3 -B "$ROOT/src/host/sandboxes.py" "$ROOT"
+fi
 if [[ $action == update ]]; then
     # Help and missing-argument errors do not need a running Podman service.
     if [[ $# -gt 0 && $1 != --help && $1 != -h ]]; then require_podman; fi

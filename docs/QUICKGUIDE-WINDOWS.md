@@ -54,6 +54,7 @@ root login is disabled.
 
 | Task | PowerShell command |
 |---|---|
+| List sandboxes | `.\sandbox.ps1 list` |
 | Stop / start | `.\sandbox.ps1 agent01 stop` / `.\sandbox.ps1 agent01 start` |
 | Restart | `.\sandbox.ps1 agent01 restart` |
 | Shell without host SSH setup | `.\sandbox.ps1 agent01 shell` |
