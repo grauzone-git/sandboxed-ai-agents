@@ -30,7 +30,7 @@ Only build and update --all run without a sandbox NAME.
                                            # start/reconnect a persistent terminal
   ./sandbox NAME service t3|hermes-dashboard|deepseek-ui|tokentracker [status|start|stop|restart|logs]
   ./sandbox NAME forward t3|hermes-dashboard|deepseek-ui|tokentracker [LOCAL_PORT]
-  ./sandbox NAME start [--ssh-config]
+  ./sandbox NAME start|restart [--ssh-config]
   ./sandbox NAME stop|shell|check|check-full|fingerprint
   ./sandbox NAME ssh-config [--install]    # create if missing and install Include
   ./sandbox NAME remove [--volumes]         # always delete local SSH files/Include
@@ -101,8 +101,8 @@ parse_cli_args() {
     capabilities_option=false
     remove_volumes=false
     setup_ssh=false
-    if [[ $action == start ]]; then
-        [[ $# -eq 1 || ( $# -eq 2 && $2 == --ssh-config ) ]] || fail 'Usage: ./sandbox NAME start [--ssh-config]'
+    if [[ $action == start || $action == restart ]]; then
+        [[ $# -eq 1 || ( $# -eq 2 && $2 == --ssh-config ) ]] || fail "Usage: ./sandbox NAME $action [--ssh-config]"
         [[ ${2:-} != --ssh-config ]] || setup_ssh=true
     fi
     if [[ $action == remove ]]; then

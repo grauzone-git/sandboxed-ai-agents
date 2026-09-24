@@ -39,7 +39,7 @@ Nothing quietly defaults to Copilot. To change an existing sandbox:
 
 `enable` adds to the selection and `disable` removes from it, while `set`
 replaces the whole thing, as in `./sandbox agent01 agents set codex,claude`. An
-existing sandbox can drop every agent with `agents agent01 set none`. Inside the
+existing sandbox can drop every agent with `agent01 agents set none`. Inside the
 sandbox, `sandbox-agents` does the same jobs.
 
 Installation runs as the unprivileged `agent` user in the sandbox's named home.
@@ -438,7 +438,7 @@ commands that collide in `~/.local/bin` have to be moved or uninstalled first.
 
 A recognized older global TokenTracker install is migrated, with its data, when
 you enable the managed tool. Saved T3 agent selections migrate to tools; use
-`tool agent01 t3 ...` for one-off commands. Older manually started web servers
+`agent01 tool t3 ...` for one-off commands. Older manually started web servers
 may need stopping if they sit on a managed tool's port.
 
 If a command is missing or acts like an older version,

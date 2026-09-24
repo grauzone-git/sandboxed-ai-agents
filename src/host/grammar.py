@@ -1,19 +1,16 @@
-"""Map the name-first launcher grammar onto the internal command-first form.
-
-Both launchers accept `LAUNCHER NAME COMMAND [SUBCOMMAND] [PARAMETERS]`. Only
-build, list and update --all omit NAME. Command names are reserved so the first
-argument is never ambiguous, and old command-first forms fail with a hint.
-"""
+"""Map the name-first launcher grammar onto the internal command-first form."""
 import re
 import shlex
 import sys
 
+# LAUNCHER NAME COMMAND [SUBCOMMAND] [PARAMETERS]; only build and update --all
+# omit NAME. Command names are reserved so the first argument is never ambiguous.
 HELP = ('help', '--help', '-h')
-GLOBAL = ('build', 'list', 'update')
+UNNAMED_COMMANDS = ('build', 'update')
 SESSIONS = ('copilot', 'claude', 'codex', 'hermes', 'opencode', 'deepseek', 't3')
-SANDBOX = ('up', 'start', 'stop', 'restart', 'remove', 'shell', 'ssh-config', 'check', 'check-full',
+NAMED_COMMANDS = ('up', 'start', 'stop', 'restart', 'remove', 'shell', 'ssh-config', 'check', 'check-full',
            'fingerprint', 'agents', 'tools', 'run', 'tool', 'service', 'forward', 'update', *SESSIONS)
-RESERVED = frozenset((*HELP, *GLOBAL, *SANDBOX, 'azdo'))
+RESERVED = frozenset((*HELP, *UNNAMED_COMMANDS, *NAMED_COMMANDS, 'azdo'))
 
 
 def command_line(prog, args):
@@ -43,9 +40,9 @@ def normalize(args, prog):
     if not args or args[0] in HELP:
         return ['help']
     first, rest = args[0], list(args[1:])
-    if first in RESERVED and rest and rest[0] in SANDBOX:
+    if first in RESERVED and rest and rest[0] in NAMED_COMMANDS:
         raise ValueError(f"'{first}' is a command name and cannot be used as a sandbox name.")
-    if first in ('build', 'list'):
+    if first == 'build':
         return [first, *rest]
     if first == 'update':
         if '--all' in rest or any(arg in HELP for arg in rest):
@@ -58,7 +55,7 @@ def normalize(args, prog):
                          + f', {command_line(prog, ["update", "--all"])}')
     if first == 'azdo':
         raise removed_azdo(prog, rest[0] if rest and not rest[0].startswith('-') else 'NAME')
-    if first in SANDBOX:
+    if first in NAMED_COMMANDS:
         name, parameters = (rest[0], rest[1:]) if rest and not rest[0].startswith('-') else ('NAME', rest)
         raise ValueError('Commands take the sandbox name first: '
                          + command_line(prog, [name, first, *parameters]))
@@ -67,24 +64,32 @@ def normalize(args, prog):
     if not rest:
         raise ValueError(f'Use {command_line(prog, ["NAME", "COMMAND"])} [SUBCOMMAND] [PARAMETERS]. '
                          f'Run {prog} --help.')
-    command, parameters = rest[0], rest[1:]
+    name, command, parameters = first, rest[0], rest[1:]
+    if command in HELP:
+        return ['help']
     if command == 'azdo':
-        raise removed_azdo(prog, first)
-    if command in ('build', 'list'):
+        raise removed_azdo(prog, name)
+    if command == 'build':
         raise ValueError(f'{command_line(prog, [command])} does not take a sandbox name.')
     if command == 'update' and '--all' in parameters:
         raise ValueError(f'Use {command_line(prog, ["update", "--all"])} without a sandbox name.')
     if command == 'update' and update_names(parameters):
-        raise ValueError(f'Update one sandbox per command: {command_line(prog, [first, "update"])} [--no-build] '
+        raise ValueError(f'Update one sandbox per command: {command_line(prog, [name, "update"])} [--no-build] '
                          '[--capabilities LIST], or update --all.')
-    if command not in SANDBOX:
+    if command not in NAMED_COMMANDS:
         raise ValueError(f'Unknown command: {command}. Run {prog} --help.')
-    return [command, first, *parameters]
+    return [command, name, *parameters]
+
+
+def main(args):
+    if not args:
+        raise ValueError('Usage: grammar.py LAUNCHER [ARGUMENTS...]')
+    # NUL-terminated arguments let Bash read them back without quoting.
+    sys.stdout.write(''.join(f'{arg}\0' for arg in normalize(args[1:], args[0])))
 
 
 if __name__ == '__main__':
-    # Print NUL-terminated arguments so Bash can read them back without quoting.
     try:
-        sys.stdout.write(''.join(f'{arg}\0' for arg in normalize(sys.argv[2:], sys.argv[1])))
-    except ValueError as error:
+        main(sys.argv[1:])
+    except (OSError, RuntimeError, ValueError) as error:
         sys.exit(f'Error: {error}')

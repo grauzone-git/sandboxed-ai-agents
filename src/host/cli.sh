@@ -27,7 +27,7 @@ fi
 
 case "$action" in
     up) create_sandbox "$@" ;;
-    start) start_sandbox "$@" ;;
+    start|restart) start_sandbox "$@" ;;
     ssh-config)
         owned
         wait_for_ssh
