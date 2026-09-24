@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import signal
+import socket
 import time
 import unittest
 from unittest.mock import patch
@@ -147,8 +148,20 @@ else: sys.exit(99)
     def test_direct_interactive_points_to_host_without_starting_login(self):
         result = self.setup('--interactive')
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('./sandbox tools NAME setup azure --interactive', result.stderr)
+        self.assertIn(f'./sandbox tools {socket.gethostname()} setup azure --tenant tenant-1 --subscription subscription-1 --interactive', result.stderr)
         self.assertFalse((self.home / '.azure').exists())
+
+    def test_replacement_keeps_user_cloud_registrations(self):
+        (self.home / '.azure').mkdir()
+        (self.home / '.azure/clouds.config').write_text('[MyCloud]\nendpoint_resource_manager = https://example.test/\n')
+        self.assertEqual(self.setup().returncode, 0)
+        self.assertIn('[MyCloud]', (self.home / '.azure/clouds.config').read_text())
+
+    def test_hosted_errors_carry_their_category(self):
+        self.assertEqual(azure_setup.failure('AADSTS50076: interaction_required').category, 'interaction')
+        self.assertEqual(azure_setup.failure('(AuthorizationFailed) denied').category, 'permission')
+        self.assertEqual(azure_setup.failure('unexpected').category, 'setup')
+        self.assertEqual(azure_setup.cancelled_error().category, 'cancelled')
 
     def test_publication_io_failure_rolls_back_all_prior_azure_files(self):
         self.assertEqual(self.setup().returncode, 0)

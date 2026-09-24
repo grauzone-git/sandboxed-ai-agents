@@ -62,7 +62,11 @@ else:
     while os.environ.get('AZURE_TEST_HANG'): time.sleep(0.1)
     print('{"event":"ready"}', flush=True)
     if json.loads(sys.stdin.readline()).get('commit'):
-        print('{"event":"complete"}', flush=True)
+        while os.environ.get('AZURE_TEST_HANG_AFTER_COMMIT'): time.sleep(0.1)
+        if os.environ.get('AZURE_TEST_ERROR'):
+            print(json.dumps({'event': 'error', 'value': os.environ['AZURE_TEST_ERROR']}), flush=True)
+        else:
+            print('{"event":"complete"}', flush=True)
     end()
 ''')
         self.ssh.chmod(0o755)
@@ -133,6 +137,17 @@ else:
         with self.assertRaisesRegex(ValueError, 'timed out'):
             self.run_login(timeout=0.7, extra={'AZURE_TEST_HANG': '1'})
         self.assertTrue(all(child.poll() is not None for child in self.children))
+
+    def test_stop_after_commit_does_not_claim_the_session_was_retained(self):
+        with self.assertRaisesRegex(ValueError, 'may already use it'):
+            self.run_login(timeout=0.7, extra={'AZURE_TEST_HANG_AFTER_COMMIT': '1'})
+        self.assertTrue(all(child.poll() is not None for child in self.children))
+
+    def test_sandbox_error_categories_map_to_host_text(self):
+        for category, message in (('cancelled', 'cancelled or timed out'), ('busy', 'Another Azure setup'),
+                                  ('unknown', 'Check your selection')):
+            with self.subTest(category=category), self.assertRaisesRegex(ValueError, message):
+                self.run_login(extra={'AZURE_TEST_ERROR': category})
 
     def test_native_windows_browser_uses_shell_open_with_local_url(self):
         with patch('os.name', 'nt'), patch('os.startfile', create=True) as start:

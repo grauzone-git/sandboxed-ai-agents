@@ -271,7 +271,7 @@ Use `./sandbox tools agent01 setup azure` for sandbox-owned Azure CLI sign-in,
 or add `--interactive` for a host browser with temporary SSH callback forwarding.
 Native Windows uses `./sandbox.ps1 tools agent01 setup azure`. See
 [Azure setup and validation](AZURE-SETUP.md) for cloud, tenant, subscription,
-replacement, logout, and the pending live validation matrix. Azure DevOps setup
+replacement, logout, and the live validation matrix. Azure DevOps setup
 below remains independent.
 
 ```bash
