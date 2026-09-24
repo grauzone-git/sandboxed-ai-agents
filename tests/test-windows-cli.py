@@ -95,7 +95,7 @@ class WindowsCliTests(unittest.TestCase):
         return subprocess.CompletedProcess(command, code, output, 'native failure' if code > 1 else '')
 
     def cli(self, *args):
-        if args and args[0] == 'up' and '--ssh-port' not in args:
+        if args[1:2] == ('up',) and '--ssh-port' not in args:
             with socket.socket() as listener:
                 listener.bind(('127.0.0.1', 0))
                 args = (*args, '--ssh-port', str(listener.getsockname()[1]))
@@ -108,7 +108,7 @@ class WindowsCliTests(unittest.TestCase):
         with socket.socket() as listener:
             listener.bind(('127.0.0.1', 0))
             port = str(listener.getsockname()[1])
-        self.assertEqual(self.cli('up', 'agent01', '--agents', 'codex', '--tools', 't3',
+        self.assertEqual(self.cli('agent01', 'up', '--agents', 'codex', '--tools', 't3',
                                   '--ssh-port', port, '--memory', '6g', '--cpus', '2'),
                          0, self.output.getvalue())
         run = next(call for call in self.calls if 'run' in call)
@@ -123,10 +123,10 @@ class WindowsCliTests(unittest.TestCase):
         self.assertFalse((self.home / '.ssh').exists())
 
     def test_invalid_selection_and_foreign_volumes_do_not_provision(self):
-        self.assertEqual(self.cli('up', 'agent01', '--agents', 'unknown'), 1)
+        self.assertEqual(self.cli('agent01', 'up', '--agents', 'unknown'), 1)
         self.assertEqual(self.calls, [])
         self.volumes['agent01-workspace'] = 'another-checkout'
-        self.assertEqual(self.cli('up', 'agent01', '--agents', 'codex'), 1)
+        self.assertEqual(self.cli('agent01', 'up', '--agents', 'codex'), 1)
         self.assertIn('another checkout', self.output.getvalue())
         self.assertFalse(any('run' in call or call[2:4] == ['volume', 'create'] for call in self.calls))
 
@@ -138,7 +138,7 @@ class WindowsCliTests(unittest.TestCase):
         self.assertEqual(self.cli('build'), 1)
         self.info['host']['security']['rootless'] = True
         self.native_failure = ('exists', 125)
-        self.assertEqual(self.cli('up', 'agent01', '--agents', 'codex'), 125)
+        self.assertEqual(self.cli('agent01', 'up', '--agents', 'codex'), 125)
         self.assertFalse(any('build' in call or 'run' in call for call in self.calls))
 
     def test_bind_with_spaces_and_owned_volume_reuse_preserve_data(self):
@@ -148,7 +148,7 @@ class WindowsCliTests(unittest.TestCase):
         from windows_paths import checkout_identity
         self.volumes['agent01-home'] = checkout_identity(PROJECT)
         self.volumes['agent01-sshd'] = checkout_identity(PROJECT)
-        self.assertEqual(self.cli('up', 'agent01', str(directory), '--agents', 'codex'), 0,
+        self.assertEqual(self.cli('agent01', 'up', str(directory), '--agents', 'codex'), 0,
                          self.output.getvalue())
         self.assertEqual((directory / 'keep.txt').read_text(), 'keep')
         run = next(call for call in self.calls if 'run' in call)
@@ -157,12 +157,12 @@ class WindowsCliTests(unittest.TestCase):
 
     def test_existing_container_and_unsafe_workspace_are_rejected(self):
         self.exists = True
-        self.assertEqual(self.cli('up', 'agent01', '--agents', 'codex'), 1)
+        self.assertEqual(self.cli('agent01', 'up', '--agents', 'codex'), 1)
         self.assertIn('already exists', self.output.getvalue())
         self.exists = False
         for target in [str(PROJECT), str(PROJECT / 'src'), str(PROJECT / 'sandbox.ps1'), str(self.home)]:
             self.calls.clear()
-            self.assertEqual(self.cli('up', 'agent01', target, '--agents', 'codex'), 1)
+            self.assertEqual(self.cli('agent01', 'up', target, '--agents', 'codex'), 1)
             self.assertFalse(any('run' in call or call[2:4] == ['volume', 'create'] for call in self.calls))
 
     def prepare_host_key(self):
@@ -172,7 +172,7 @@ class WindowsCliTests(unittest.TestCase):
 
     def test_creation_with_ssh_opt_in_installs_the_managed_alias(self):
         self.prepare_host_key()
-        self.assertEqual(self.cli('up', 'agent01', '--agents', 'copilot', '--ssh-config'), 0,
+        self.assertEqual(self.cli('agent01', 'up', '--agents', 'copilot', '--ssh-config'), 0,
                          self.output.getvalue())
         state = self.home / '.ssh/sanboxed-agents/agent01'
         self.assertTrue((state / 'id_ed25519').is_file())
@@ -218,7 +218,7 @@ class WindowsCliTests(unittest.TestCase):
         from windows_runtime import Runtime
         from windows_ssh import SshSetup
         self.prepare_host_key()
-        self.assertEqual(self.cli('ssh-config', 'agent01', '--install'), 0)
+        self.assertEqual(self.cli('agent01', 'ssh-config', '--install'), 0)
         runtime = Runtime(self.runner)
         runtime.connection = 'machine'
         setup = SshSetup(runtime, checkout_identity(PROJECT), 'agent01')
@@ -265,34 +265,34 @@ class WindowsCliTests(unittest.TestCase):
 
     def test_remove_checks_ssh_config_lock_before_container_mutation(self):
         self.prepare_host_key()
-        self.assertEqual(self.cli('ssh-config', 'agent01', '--install'), 0)
+        self.assertEqual(self.cli('agent01', 'ssh-config', '--install'), 0)
         config = self.home / '.ssh/config'
         original = config.read_bytes()
         lock = self.home / '.ssh/sanboxed-agents/.config.lock'
         lock.mkdir()
         self.calls.clear()
         try:
-            self.assertEqual(self.cli('remove', 'agent01'), 1)
+            self.assertEqual(self.cli('agent01', 'remove'), 1)
             self.assertIn('SSH config update is locked', self.output.getvalue())
             self.assertFalse(any(call[2:3] in (['stop'], ['rm']) for call in self.calls))
             self.assertEqual(config.read_bytes(), original)
         finally:
             lock.rmdir()
-        self.assertEqual(self.cli('remove', 'agent01'), 0, self.output.getvalue())
+        self.assertEqual(self.cli('agent01', 'remove'), 0, self.output.getvalue())
 
     def test_ssh_is_opt_in_and_can_be_added_later_idempotently(self):
         self.prepare_host_key()
-        self.assertEqual(self.cli('up', 'agent01', '--agents', 'codex'), 0)
+        self.assertEqual(self.cli('agent01', 'up', '--agents', 'codex'), 0)
         self.assertFalse((self.home / '.ssh').exists())
         self.calls.clear()
         ssh_dir = self.home / '.ssh'
         ssh_dir.mkdir()
         config = ssh_dir / 'config'
         config.write_text('Host unrelated\n    HostName example.test\n')
-        self.assertEqual(self.cli('ssh-config', 'agent01', '--install'), 0, self.output.getvalue())
+        self.assertEqual(self.cli('agent01', 'ssh-config', '--install'), 0, self.output.getvalue())
         state = ssh_dir / 'sanboxed-agents/agent01'
         before = (state / 'id_ed25519').read_bytes()
-        self.assertEqual(self.cli('ssh-config', 'agent01', '--install'), 0, self.output.getvalue())
+        self.assertEqual(self.cli('agent01', 'ssh-config', '--install'), 0, self.output.getvalue())
         self.assertEqual((state / 'id_ed25519').read_bytes(), before)
         self.assertEqual(config.read_text().count('Include '), 1)
         self.assertIn('Host unrelated\n    HostName example.test\n', config.read_text())
@@ -301,7 +301,7 @@ class WindowsCliTests(unittest.TestCase):
         self.assertFalse(any('run' in call for call in self.calls))
 
     def test_nested_podman_uses_guest_policy_and_retains_isolation(self):
-        self.assertEqual(self.cli('up', 'agent01', '--agents', 'codex', '--capabilities', 'podman'),
+        self.assertEqual(self.cli('agent01', 'up', '--agents', 'codex', '--capabilities', 'podman'),
                          0, self.output.getvalue())
         run = next(call for call in self.calls if 'run' in call)
         self.assertEqual(run[-1], 'b' * 64)
@@ -323,23 +323,23 @@ class WindowsCliTests(unittest.TestCase):
                         ('--agents', 'codex', '--cpus', 'NaN'), ('--agents', 'codex', '--memory', '-1g'),
                         ('--agents', 'codex', '--ssh-port', '1023'),
                         ('--agents', 'codex', '--capabilities', 'podman,podman')]:
-            self.assertEqual(self.cli('up', 'agent01', *options), 1)
+            self.assertEqual(self.cli('agent01', 'up', *options), 1)
         self.assertEqual(self.calls, [])
 
     def test_busy_port_and_foreign_ssh_owner_leave_state_untouched(self):
         with socket.socket() as listener:
             listener.bind(('127.0.0.1', 0))
             listener.listen()
-            self.assertEqual(self.cli('up', 'agent01', '--agents', 'codex', '--ssh-port',
+            self.assertEqual(self.cli('agent01', 'up', '--agents', 'codex', '--ssh-port',
                                       str(listener.getsockname()[1])), 1)
         self.assertFalse(self.volumes)
         self.owner_override = 'another-checkout'
-        self.assertEqual(self.cli('ssh-config', 'agent01', '--install'), 1)
+        self.assertEqual(self.cli('agent01', 'ssh-config', '--install'), 1)
         self.assertFalse((self.home / '.ssh').exists())
 
     def test_missing_ssh_dependency_does_not_create_container_or_volumes(self):
         with patch('shutil.which', side_effect=lambda name: None if name == 'ssh-keygen' else name):
-            self.assertEqual(self.cli('up', 'agent01', '--agents', 'codex', '--ssh-config'), 1)
+            self.assertEqual(self.cli('agent01', 'up', '--agents', 'codex', '--ssh-config'), 1)
         self.assertFalse(self.volumes)
         self.assertFalse(any('run' in call for call in self.calls))
 
@@ -352,13 +352,13 @@ class WindowsCliTests(unittest.TestCase):
 
     def test_failed_capability_build_preserves_volumes(self):
         self.native_failure = ('build', 34)
-        self.assertEqual(self.cli('up', 'agent01', '--agents', 'codex', '--capabilities', 'podman'), 34)
+        self.assertEqual(self.cli('agent01', 'up', '--agents', 'codex', '--capabilities', 'podman'), 34)
         self.assertFalse(self.volumes)
         self.assertFalse(any('run' in call for call in self.calls))
 
     def test_failed_container_creation_retains_owned_volumes(self):
         self.native_failure = ('run', 35)
-        self.assertEqual(self.cli('up', 'agent01', '--agents', 'codex'), 35)
+        self.assertEqual(self.cli('agent01', 'up', '--agents', 'codex'), 35)
         self.assertEqual(set(self.volumes), {'agent01-home', 'agent01-sshd', 'agent01-workspace'})
         self.assertFalse(any('init' in call or 'rm' in call for call in self.calls))
         self.assertFalse((self.home / '.ssh').exists())
@@ -366,10 +366,10 @@ class WindowsCliTests(unittest.TestCase):
     def test_stopped_container_reports_state_and_log_command_without_removing_data(self):
         self.native_failure = ('exec', 125)
         self.container_state = {'Status': 'exited', 'ExitCode': 1, 'OOMKilled': False}
-        self.assertEqual(self.cli('up', 'agent01', '--agents', 'copilot', '--tools', 't3', '--ssh-config'), 125)
+        self.assertEqual(self.cli('agent01', 'up', '--agents', 'copilot', '--tools', 't3', '--ssh-config'), 125)
         self.assertFalse((self.home / '.ssh').exists())
         self.assertIn('Host SSH setup has not run', self.output.getvalue())
-        self.assertIn('ssh-config agent01 --install', self.output.getvalue())
+        self.assertIn('./sandbox.ps1 agent01 ssh-config --install', self.output.getvalue())
         self.assertIn('exited', self.output.getvalue())
         self.assertIn('exit code 1', self.output.getvalue())
         self.assertIn('podman --connection machine logs --tail 100 agent01', self.output.getvalue())
@@ -379,26 +379,26 @@ class WindowsCliTests(unittest.TestCase):
     def test_start_stop_and_restart_enforce_ownership_without_implicit_ssh(self):
         for action in ('start', 'stop', 'restart'):
             self.calls.clear()
-            self.assertEqual(self.cli(action, 'agent01'), 0, self.output.getvalue())
+            self.assertEqual(self.cli('agent01', action), 0, self.output.getvalue())
             self.assertTrue(any(call[2:] == [action, 'c' * 64] for call in self.calls))
             self.assertFalse((self.home / '.ssh').exists())
         self.owner_override = 'other'
         self.calls.clear()
-        self.assertEqual(self.cli('stop', 'agent01'), 1)
+        self.assertEqual(self.cli('agent01', 'stop'), 1)
         self.assertFalse(any('stop' in call for call in self.calls))
 
     def test_remove_retains_volumes_and_cleans_only_owned_ssh_after_success(self):
         self.prepare_host_key()
-        self.assertEqual(self.cli('ssh-config', 'agent01', '--install'), 0)
+        self.assertEqual(self.cli('agent01', 'ssh-config', '--install'), 0)
         config = self.home / '.ssh/config'
         with config.open('a') as stream:
             stream.write('Host unrelated\n    HostName example.test\n')
         self.native_failure = ('rm', 42)
-        self.assertEqual(self.cli('remove', 'agent01'), 42, self.output.getvalue())
+        self.assertEqual(self.cli('agent01', 'remove'), 42, self.output.getvalue())
         self.assertTrue((self.home / '.ssh/sanboxed-agents/agent01/id_ed25519').exists())
         self.native_failure = None
         self.calls.clear()
-        self.assertEqual(self.cli('remove', 'agent01'), 0, self.output.getvalue())
+        self.assertEqual(self.cli('agent01', 'remove'), 0, self.output.getvalue())
         self.assertEqual(config.read_text(), 'Host unrelated\n    HostName example.test\n')
         self.assertFalse((self.home / '.ssh/sanboxed-agents/agent01').exists())
         self.assertFalse(any(call[2:4] == ['volume', 'rm'] for call in self.calls))
@@ -406,26 +406,26 @@ class WindowsCliTests(unittest.TestCase):
     def test_remove_checks_all_volume_owners_before_mutation(self):
         from windows_paths import checkout_identity
         self.volumes = {'agent01-home': checkout_identity(PROJECT), 'agent01-sshd': 'foreign'}
-        self.assertEqual(self.cli('remove', 'agent01', '--volumes'), 1)
+        self.assertEqual(self.cli('agent01', 'remove', '--volumes'), 1)
         self.assertFalse(any('stop' in call or 'rm' in call for call in self.calls))
         self.volumes['agent01-sshd'] = checkout_identity(PROJECT)
-        self.assertEqual(self.cli('remove', 'agent01', '--volumes'), 0, self.output.getvalue())
+        self.assertEqual(self.cli('agent01', 'remove', '--volumes'), 0, self.output.getvalue())
         removed = [call[2:] for call in self.calls if call[2:4] == ['volume', 'rm']]
         self.assertEqual(removed, [['volume', 'rm', 'agent01-home'], ['volume', 'rm', 'agent01-sshd']])
 
     def test_start_with_opt_in_and_diagnostics_use_owned_sandbox(self):
         self.prepare_host_key()
-        self.assertEqual(self.cli('start', 'agent01', '--ssh-config'), 0, self.output.getvalue())
+        self.assertEqual(self.cli('agent01', 'start', '--ssh-config'), 0, self.output.getvalue())
         self.assertTrue((self.home / '.ssh/sanboxed-agents/agent01/id_ed25519').exists())
-        self.assertEqual(self.cli('fingerprint', 'agent01'), 0, self.output.getvalue())
-        self.assertEqual(self.cli('shell', 'agent01'), 0, self.output.getvalue())
+        self.assertEqual(self.cli('agent01', 'fingerprint'), 0, self.output.getvalue())
+        self.assertEqual(self.cli('agent01', 'shell'), 0, self.output.getvalue())
         self.assertTrue(any(call[-1] == '/bin/bash' and '1000:1000' in call for call in self.calls))
-        self.assertEqual(self.cli('check-full', 'agent01'), 0, self.output.getvalue())
+        self.assertEqual(self.cli('agent01', 'check-full'), 0, self.output.getvalue())
         self.assertTrue(any(call[-2:] == ['/usr/local/bin/agent-smoke', '--full'] for call in self.calls))
 
     def test_lifecycle_invalid_arguments_fail_before_runtime(self):
-        for args in [('stop',), ('remove', 'agent01', '--force'), ('start', 'agent01', '--volumes'),
-                     ('shell', 'agent01', 'extra'), ('restart', 'agent01', '--ssh-config', '--ssh-config')]:
+        for args in [('stop',), ('agent01', 'remove', '--force'), ('agent01', 'start', '--volumes'),
+                     ('agent01', 'shell', 'extra'), ('agent01', 'restart', '--ssh-config', '--ssh-config')]:
             self.calls.clear()
             self.assertEqual(self.cli(*args), 1)
             self.assertEqual(self.calls, [])
@@ -434,19 +434,19 @@ class WindowsCliTests(unittest.TestCase):
         state = self.home / '.ssh/sanboxed-agents/agent01'
         state.mkdir(parents=True)
         (state / 'owner.json').write_text(json.dumps({'project': 'foreign', 'name': 'agent01'}))
-        self.assertEqual(self.cli('remove', 'agent01'), 1)
+        self.assertEqual(self.cli('agent01', 'remove'), 1)
         self.assertFalse(any('stop' in call or 'rm' in call for call in self.calls))
         self.assertTrue((state / 'owner.json').exists())
 
     def test_remove_without_ssh_does_not_require_keygen_or_write_host_files(self):
         with patch('shutil.which', side_effect=lambda name: None if name == 'ssh-keygen' else name):
-            self.assertEqual(self.cli('remove', 'agent01'), 0, self.output.getvalue())
+            self.assertEqual(self.cli('agent01', 'remove'), 0, self.output.getvalue())
         self.assertFalse((self.home / '.ssh').exists())
 
     def test_remove_volume_failure_cleans_obsolete_ssh_but_keeps_data(self):
         from windows_paths import checkout_identity
         self.prepare_host_key()
-        self.assertEqual(self.cli('ssh-config', 'agent01', '--install'), 0)
+        self.assertEqual(self.cli('agent01', 'ssh-config', '--install'), 0)
         self.volumes['agent01-home'] = checkout_identity(PROJECT)
         original = self.runner
         def fail_volume(command, **kwargs):
@@ -454,18 +454,18 @@ class WindowsCliTests(unittest.TestCase):
                 return subprocess.CompletedProcess(command, 43, '', 'volume in use')
             return original(command, **kwargs)
         with patch.object(self, 'runner', side_effect=fail_volume):
-            self.assertEqual(self.cli('remove', 'agent01', '--volumes'), 43, self.output.getvalue())
+            self.assertEqual(self.cli('agent01', 'remove', '--volumes'), 43, self.output.getvalue())
         self.assertFalse((self.home / '.ssh/sanboxed-agents/agent01').exists())
         self.assertIn('agent01-home', self.volumes)
 
     def test_agent_and_tool_management_routes_owned_unprivileged_commands(self):
         cases = [
-            (('agents', 'agent01'), 'agents', ['list']),
-            (('tools', 'agent01', 'check'), 'tools', ['check']),
-            (('agents', 'agent01', 'set', 'codex,claude'), 'agents', ['set', 'codex,claude']),
-            (('tools', 'agent01', 'enable', 't3@1.2.3'), 'tools', ['enable', 't3@1.2.3']),
-            (('agents', 'agent01', 'disable', 'none'), 'agents', ['disable', 'none']),
-            (('tools', 'agent01', 'update', 'all'), 'tools', ['update', 'all']),
+            (('agent01', 'agents'), 'agents', ['list']),
+            (('agent01', 'tools', 'check'), 'tools', ['check']),
+            (('agent01', 'agents', 'set', 'codex,claude'), 'agents', ['set', 'codex,claude']),
+            (('agent01', 'tools', 'enable', 't3@1.2.3'), 'tools', ['enable', 't3@1.2.3']),
+            (('agent01', 'agents', 'disable', 'none'), 'agents', ['disable', 'none']),
+            (('agent01', 'tools', 'update', 'all'), 'tools', ['update', 'all']),
         ]
         for arguments, kind, expected in cases:
             self.calls.clear()
@@ -477,21 +477,21 @@ class WindowsCliTests(unittest.TestCase):
 
     def test_login_setup_runs_and_sessions_keep_stdin_and_literal_arguments(self):
         cases = [
-            (('agents', 'agent01', 'login', 'copilot'), 'agents', ['login', 'copilot']),
-            (('tools', 'agent01', 'login', 'github'), 'tools', ['login', 'github']),
-            (('tools', 'agent01', 'setup', 't3'), 'tools', ['setup', 't3']),
-            (('tools', 'agent01', 'setup', 'azdo'), 'tools', ['setup', 'azdo']),
-            (('tools', 'agent01', 'setup', 'azdo', '--persist'), 'tools', ['setup', 'azdo', '--persist']),
-            (('tools', 'agent01', 'setup', 'azdo', '--clear'), 'tools', ['setup', 'azdo', '--clear']),
-            (('tools', 'agent01', 'setup', 'azure', '--tenant', 'tenant-1', '--subscription', 'My subscription'),
+            (('agent01', 'agents', 'login', 'copilot'), 'agents', ['login', 'copilot']),
+            (('agent01', 'tools', 'login', 'github'), 'tools', ['login', 'github']),
+            (('agent01', 'tools', 'setup', 't3'), 'tools', ['setup', 't3']),
+            (('agent01', 'tools', 'setup', 'azdo'), 'tools', ['setup', 'azdo']),
+            (('agent01', 'tools', 'setup', 'azdo', '--persist'), 'tools', ['setup', 'azdo', '--persist']),
+            (('agent01', 'tools', 'setup', 'azdo', '--clear'), 'tools', ['setup', 'azdo', '--clear']),
+            (('agent01', 'tools', 'setup', 'azure', '--tenant', 'tenant-1', '--subscription', 'My subscription'),
              'tools', ['setup', 'azure', '--tenant', 'tenant-1', '--subscription', 'My subscription']),
-            (('tools', 'agent01', 'setup', 'azure', '--cloud', 'AzureChinaCloud', '--tenant-only'),
+            (('agent01', 'tools', 'setup', 'azure', '--cloud', 'AzureChinaCloud', '--tenant-only'),
              'tools', ['setup', 'azure', '--cloud', 'AzureChinaCloud', '--tenant-only']),
-            (('run', 'agent01', 'codex', 'space and "quote"', '', '$literal;value'),
+            (('agent01', 'run', 'codex', 'space and "quote"', '', '$literal;value'),
              'agents', ['run', 'codex', 'space and "quote"', '', '$literal;value']),
-            (('tool', 'agent01', 't3', '--help'), 'tools', ['run', 't3', '--help']),
-            (('copilot', 'agent01'), 'agents', ['session', 'copilot']),
-            (('t3', 'agent01'), 'tools', ['session', 't3']),
+            (('agent01', 'tool', 't3', '--help'), 'tools', ['run', 't3', '--help']),
+            (('agent01', 'copilot'), 'agents', ['session', 'copilot']),
+            (('agent01', 't3'), 'tools', ['session', 't3']),
         ]
         for arguments, kind, expected in cases:
             self.calls.clear()
@@ -504,61 +504,61 @@ class WindowsCliTests(unittest.TestCase):
         self.assertFalse((self.home / '.ssh').exists())
 
     def test_manager_validation_and_ownership_precede_execution(self):
-        invalid = [('agents',), ('agents', 'agent01', 'set', 'bad'),
-                   ('tools', 'agent01', 'list', 'extra'), ('agents', 'agent01', 'login', 'deepseek'),
-                   ('tools', 'agent01', 'setup', 'github'), ('copilot', 'agent01', '--help'),
-                   ('agents', 'agent01', 'setup', 'azdo'), ('tools', 'agent01', 'setup'),
-                   ('tools', 'agent01', 'setup', 't3', '--persist'),
-                   ('tools', 'agent01', 'setup', 'azdo', '--unknown'),
-                   ('tools', 'agent01', 'setup', 'azdo', '--persist', '--clear'),
-                   ('tools', 'agent01', 'setup', 'azure', '--persist'),
-                   ('tools', 'agent01', 'setup', 'azure', '--cloud', 'unsupported'),
-                   ('run', 'agent01'), ('tool', 'agent01', 'not-a-tool')]
+        invalid = [('agents',), ('agent01', 'agents', 'set', 'bad'),
+                   ('agent01', 'tools', 'list', 'extra'), ('agent01', 'agents', 'login', 'deepseek'),
+                   ('agent01', 'tools', 'setup', 'github'), ('agent01', 'copilot', '--help'),
+                   ('agent01', 'agents', 'setup', 'azdo'), ('agent01', 'tools', 'setup'),
+                   ('agent01', 'tools', 'setup', 't3', '--persist'),
+                   ('agent01', 'tools', 'setup', 'azdo', '--unknown'),
+                   ('agent01', 'tools', 'setup', 'azdo', '--persist', '--clear'),
+                   ('agent01', 'tools', 'setup', 'azure', '--persist'),
+                   ('agent01', 'tools', 'setup', 'azure', '--cloud', 'unsupported'),
+                   ('agent01', 'run'), ('agent01', 'tool', 'not-a-tool')]
         for arguments in invalid:
             self.calls.clear()
             self.assertEqual(self.cli(*arguments), 1)
             self.assertEqual(self.calls, [])
         self.owner_override = 'foreign'
-        self.assertEqual(self.cli('tools', 'agent01', 'set', 't3'), 1)
+        self.assertEqual(self.cli('agent01', 'tools', 'set', 't3'), 1)
         self.assertFalse(any('exec' in call for call in self.calls))
         self.owner_override = None
         self.native_failure = ('exec', 39)
-        self.assertEqual(self.cli('agents', 'agent01', 'check'), 39)
+        self.assertEqual(self.cli('agent01', 'agents', 'check'), 39)
 
     def test_azure_browser_setup_requires_explicit_ssh_before_login(self):
-        self.assertEqual(self.cli('tools', 'agent01', 'setup', 'azure', '--interactive'), 1)
-        self.assertIn('./sandbox.ps1 ssh-config agent01 --install', self.output.getvalue())
+        self.assertEqual(self.cli('agent01', 'tools', 'setup', 'azure', '--interactive'), 1)
+        self.assertIn('./sandbox.ps1 agent01 ssh-config --install', self.output.getvalue())
         self.assertFalse((self.home / '.ssh').exists())
         self.assertFalse(any('exec' in call for call in self.calls))
 
     def test_forward_refuses_occupied_port_before_service_or_ssh(self):
         self.prepare_host_key()
-        self.assertEqual(self.cli('ssh-config', 'agent01', '--install'), 0)
+        self.assertEqual(self.cli('agent01', 'ssh-config', '--install'), 0)
         files = {path: path.read_bytes() for path in (self.home / '.ssh').rglob('*') if path.is_file()}
         self.calls.clear()
         with socket.socket() as listener:
             listener.bind(('127.0.0.1', 0))
             listener.listen()
             port = str(listener.getsockname()[1])
-            self.assertEqual(self.cli('forward', 'agent01', 't3', port), 1, self.output.getvalue())
+            self.assertEqual(self.cli('agent01', 'forward', 't3', port), 1, self.output.getvalue())
         self.assertIn(f'Forwarding port {port} is unavailable', self.output.getvalue())
         self.assertFalse(any('exec' in call or '-L' in call for call in self.calls))
         self.assertEqual(files, {path: path.read_bytes() for path in files})
-        self.assertEqual(self.cli('forward', 'agent01', 't3', port), 0, self.output.getvalue())
+        self.assertEqual(self.cli('agent01', 'forward', 't3', port), 0, self.output.getvalue())
         self.assertTrue(any('-L' in call for call in self.calls))
 
     @patch('windows_commands.require_forward_port')
     def test_tool_services_and_forwarding_use_catalog_ports_and_managed_ssh(self, port_check):
-        self.assertEqual(self.cli('service', 'agent01', 'hermes', 'restart'), 0, self.output.getvalue())
+        self.assertEqual(self.cli('agent01', 'service', 'hermes', 'restart'), 0, self.output.getvalue())
         self.assertTrue(any(call[-3:] == ['service', 'hermes-dashboard', 'restart'] for call in self.calls))
         self.calls.clear()
-        self.assertEqual(self.cli('forward', 'agent01', 't3'), 1)
+        self.assertEqual(self.cli('agent01', 'forward', 't3'), 1)
         self.assertFalse(any('exec' in call for call in self.calls))
         self.assertFalse((self.home / '.ssh').exists())
         self.prepare_host_key()
-        self.assertEqual(self.cli('ssh-config', 'agent01', '--install'), 0)
+        self.assertEqual(self.cli('agent01', 'ssh-config', '--install'), 0)
         self.calls.clear()
-        self.assertEqual(self.cli('forward', 'agent01', 't3', '4773'), 0, self.output.getvalue())
+        self.assertEqual(self.cli('agent01', 'forward', 't3', '4773'), 0, self.output.getvalue())
         self.assertTrue(any(call[-3:] == ['service', 't3', 'start'] for call in self.calls))
         forward = next(call for call in self.calls if '-L' in call)
         self.assertIn('127.0.0.1:4773:127.0.0.1:3773', forward)
@@ -566,14 +566,14 @@ class WindowsCliTests(unittest.TestCase):
         self.assertEqual(forward[forward.index('-F') + 1], str(self.home / '.ssh/sanboxed-agents/agent01/agent01.conf'))
         self.assertEqual(forward[-1], 'agent01')
         self.calls.clear()
-        self.assertEqual(self.cli('forward', 'agent01', 'deepseek'), 0)
+        self.assertEqual(self.cli('agent01', 'forward', 'deepseek'), 0)
         self.assertTrue(any('127.0.0.1:3080:127.0.0.1:3080' in call for call in self.calls))
         self.assertEqual([call.args[0] for call in port_check.call_args_list], [4773, 3080])
 
     def test_invalid_service_and_forward_options_do_not_contact_engine(self):
-        for arguments in [('service', 'agent01', 't3', 'bad'), ('service', 'agent01', 'copilot'),
-                          ('forward', 'agent01', 't3', '22'), ('forward', 'agent01', 'unknown'),
-                          ('forward', 'agent01', 't3', '3773', 'extra')]:
+        for arguments in [('agent01', 'service', 't3', 'bad'), ('agent01', 'service', 'copilot'),
+                          ('agent01', 'forward', 't3', '22'), ('agent01', 'forward', 'unknown'),
+                          ('agent01', 'forward', 't3', '3773', 'extra')]:
             self.calls.clear()
             self.assertEqual(self.cli(*arguments), 1)
             self.assertEqual(self.calls, [])
@@ -583,7 +583,7 @@ class WindowsCliTests(unittest.TestCase):
             def isatty(self):
                 return True
         with patch('sys.stdin', Terminal()), contextlib.redirect_stdout(Terminal()), contextlib.redirect_stderr(io.StringIO()):
-            result = main(['agents', 'agent01', 'login', 'codex'], runner=self.runner)
+            result = main(['agent01', 'agents', 'login', 'codex'], runner=self.runner)
         self.assertEqual(result, 0)
         call = next(call for call in self.calls if 'exec' in call)
         self.assertIn('-i', call)
@@ -592,18 +592,18 @@ class WindowsCliTests(unittest.TestCase):
     @patch('windows_commands.require_forward_port')
     def test_forward_failure_preserves_ssh_files_and_native_status(self, port_check):
         self.prepare_host_key()
-        self.assertEqual(self.cli('ssh-config', 'agent01', '--install'), 0)
+        self.assertEqual(self.cli('agent01', 'ssh-config', '--install'), 0)
         files = {path: path.read_bytes() for path in (self.home / '.ssh').rglob('*') if path.is_file()}
         self.calls.clear()
         self.native_failure = ('exec', 41)
-        self.assertEqual(self.cli('forward', 'agent01', 't3'), 41)
+        self.assertEqual(self.cli('agent01', 'forward', 't3'), 41)
         self.assertFalse(any('-L' in call for call in self.calls))
         self.native_failure = ('-L', 255)
-        self.assertEqual(self.cli('forward', 'agent01', 't3'), 255)
+        self.assertEqual(self.cli('agent01', 'forward', 't3'), 255)
         self.assertEqual(files, {path: path.read_bytes() for path in files})
         self.owner_override = 'foreign'
         self.calls.clear()
-        self.assertEqual(self.cli('forward', 'agent01', 't3'), 1)
+        self.assertEqual(self.cli('agent01', 'forward', 't3'), 1)
         self.assertFalse(any('exec' in call or '-L' in call for call in self.calls))
 
     def test_build_preserves_extra_arguments_and_native_exit_code(self):
@@ -613,6 +613,31 @@ class WindowsCliTests(unittest.TestCase):
         self.assertEqual(build[-1], str(PROJECT / 'src/container'))
         self.native_failure = ('build', 37)
         self.assertEqual(self.cli('build'), 37, self.output.getvalue())
+
+    def test_commands_take_the_sandbox_name_first(self):
+        for args, hint in [
+            (('up', 'agent01', '--agents', 'codex'), './sandbox.ps1 agent01 up --agents codex'),
+            (('agents', 'agent01', 'login', 'claude'), './sandbox.ps1 agent01 agents login claude'),
+            (('restart', 'agent01'), './sandbox.ps1 agent01 restart'),
+            (('update', 'agent01'), './sandbox.ps1 agent01 update'),
+            (('agent01',), './sandbox.ps1 NAME COMMAND'),
+            (('agent01', 'build'), './sandbox.ps1 build'),
+            (('azdo', 'agent01', '--pat-env'), './sandbox.ps1 agent01 tools setup azdo --persist'),
+            (('agent01', 'azdo', '--pat-env'), './sandbox.ps1 agent01 tools setup azdo --persist'),
+            (('shell', 'up', '--agents', 'codex'), "'shell' is a command"),
+        ]:
+            self.calls.clear()
+            self.assertEqual(self.cli(*args), 1, args)
+            self.assertIn(hint, self.output.getvalue())
+            self.assertEqual(self.calls, [])
+
+    def test_update_takes_one_name_first_or_all(self):
+        with patch('windows_update.run') as run:
+            self.assertEqual(self.cli('agent01', 'update', '--no-build'), 0, self.output.getvalue())
+            self.assertEqual(run.call_args.args[3].names, ['agent01'])
+            self.assertTrue(run.call_args.args[3].no_build)
+            self.assertEqual(self.cli('update', '--all'), 0, self.output.getvalue())
+            self.assertTrue(run.call_args.args[3].all_sandboxes)
         self.assertFalse((self.home / '.ssh').exists())
 
 

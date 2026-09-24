@@ -31,14 +31,14 @@ takes all six; leaving the flag out or passing `--agents none` fails on purpose.
 Nothing quietly defaults to Copilot. To change an existing sandbox:
 
 ```bash
-./sandbox agents agent01 list
-./sandbox agents agent01 enable claude,opencode
-./sandbox agents agent01 disable opencode
-./sandbox agents agent01 check
+./sandbox agent01 agents list
+./sandbox agent01 agents enable claude,opencode
+./sandbox agent01 agents disable opencode
+./sandbox agent01 agents check
 ```
 
 `enable` adds to the selection and `disable` removes from it, while `set`
-replaces the whole thing, as in `./sandbox agents agent01 set codex,claude`. An
+replaces the whole thing, as in `./sandbox agent01 agents set codex,claude`. An
 existing sandbox can drop every agent with `agents agent01 set none`. Inside the
 sandbox, `sandbox-agents` does the same jobs.
 
@@ -68,8 +68,8 @@ below. For GitHub repository access, use the
 ### Codex device-code login
 
 ```bash
-./sandbox agents agent01 enable codex
-./sandbox agents agent01 login codex
+./sandbox agent01 agents enable codex
+./sandbox agent01 agents login codex
 ```
 
 The helper runs `codex login --device-auth`. Open the printed URL in your
@@ -78,15 +78,15 @@ until login finishes. Your ChatGPT account security settings or workspace
 permissions have to allow device-code login. No SSH port forward is involved.
 [OpenAI authentication documentation](https://learn.chatgpt.com/docs/auth#login-on-headless-devices).
 
-Check the result with `./sandbox run agent01 codex login status`. Credentials
+Check the result with `./sandbox agent01 run codex login status`. Credentials
 normally end up in `~/.codex/auth.json`, depending on Codex's credential-store
 settings.
 
 ### Claude browser login
 
 ```bash
-./sandbox agents agent01 enable claude
-./sandbox agents agent01 login claude
+./sandbox agent01 agents enable claude
+./sandbox agent01 agents login claude
 ```
 
 The helper runs `claude auth login`. Open the printed URL locally and sign in.
@@ -94,16 +94,16 @@ If the browser shows a login code, paste it back into the waiting terminal, and
 keep that terminal open until Claude confirms.
 [Claude authentication documentation](https://code.claude.com/docs/en/authentication).
 
-Check with `./sandbox run agent01 claude auth status`. For other flows, run
-`./sandbox run agent01 claude auth login --console` or `--sso`. If an older
+Check with `./sandbox agent01 run claude auth status`. For other flows, run
+`./sandbox agent01 run claude auth login --console` or `--sso`. If an older
 container tells you managed Claude login is unsupported,
 [rebuild and recreate it](SANDBOXES.md#upgrade-the-image).
 
 ### OpenCode provider login
 
 ```bash
-./sandbox agents agent01 enable opencode
-./sandbox agents agent01 login opencode
+./sandbox agent01 agents enable opencode
+./sandbox agent01 agents login opencode
 ```
 
 The helper runs `opencode auth login` interactively inside the sandbox. Choose a
@@ -119,7 +119,7 @@ login helper will not do for you.
 To see what is stored:
 
 ```bash
-./sandbox run agent01 opencode auth list
+./sandbox agent01 run opencode auth list
 ```
 
 OpenCode keeps credentials in `~/.local/share/opencode/auth.json` in the named
@@ -128,7 +128,7 @@ succeed. The helper passes input and output straight through to OpenCode and
 does not capture secrets in manager logs.
 [OpenCode authentication commands](https://opencode.ai/docs/cli/#auth).
 
-For other CLI options, use `./sandbox run agent01 opencode auth login ...`.
+For other CLI options, use `./sandbox agent01 run opencode auth login ...`.
 Existing containers need the updated manager, so [rebuild and recreate
 them](SANDBOXES.md#upgrade-the-image) with their named volumes and agent
 selection retained before the login helper is available.
@@ -136,8 +136,8 @@ selection retained before the login helper is available.
 ### Copilot device-code login
 
 ```bash
-./sandbox agents agent01 enable copilot
-./sandbox agents agent01 login copilot
+./sandbox agent01 agents enable copilot
+./sandbox agent01 agents login copilot
 ```
 
 The helper runs `copilot login --device-code`. Open the printed URL in your
@@ -150,12 +150,12 @@ no port forward is needed.
 Copilot has to be enabled first, since login does not install it. This
 authentication stays inside the sandbox and is unrelated to your Git or GitHub
 CLI credentials. Once signed in, open a session with
-`./sandbox copilot agent01`.
+`./sandbox agent01 copilot`.
 
 For a GitHub Enterprise Cloud hostname, call the CLI directly:
 
 ```bash
-./sandbox run agent01 copilot login --device-code --host HOSTNAME
+./sandbox agent01 run copilot login --device-code --host HOSTNAME
 ```
 
 Replace `HOSTNAME` with your instance. Existing containers need an
@@ -166,8 +166,8 @@ retained, to get the new login helper. If a pinned Copilot version has no
 ### Hermes provider login
 
 ```bash
-./sandbox agents agent01 enable hermes
-./sandbox agents agent01 login hermes
+./sandbox agent01 agents enable hermes
+./sandbox agent01 agents login hermes
 ```
 
 The helper runs `hermes model`, the interactive provider and model setup wizard.
@@ -187,11 +187,11 @@ API-key method.
 To manage credentials without choosing a model:
 
 ```bash
-./sandbox run agent01 hermes auth
-./sandbox run agent01 hermes auth list
+./sandbox agent01 run hermes auth
+./sandbox agent01 run hermes auth list
 ```
 
-For setup beyond authentication, run `./sandbox run agent01 hermes setup`.
+For setup beyond authentication, run `./sandbox agent01 run hermes setup`.
 Existing containers need an [image rebuild and recreation](SANDBOXES.md#upgrade-the-image)
 with their named volumes retained to get the login helper.
 
@@ -209,12 +209,12 @@ jobs.
 Every enabled agent gets a persistent terminal shortcut:
 
 ```bash
-./sandbox copilot agent01
-./sandbox claude agent01
-./sandbox codex agent01
-./sandbox hermes agent01
-./sandbox opencode agent01
-./sandbox deepseek agent01
+./sandbox agent01 copilot
+./sandbox agent01 claude
+./sandbox agent01 codex
+./sandbox agent01 hermes
+./sandbox agent01 opencode
+./sandbox agent01 deepseek
 ```
 
 Each one starts or reconnects its own tmux session in `/workspace`. Detach with
@@ -223,12 +223,12 @@ stops. None of these commands installs or enables anything implicitly.
 
 DeepSeek opens a shell showing Harness CLI help rather than starting the
 optional UI. After provider setup, run a task with
-`./sandbox run agent01 deepseek headless "YOUR TASK"`.
+`./sandbox agent01 run deepseek headless "YOUR TASK"`.
 
 For one-off commands or custom CLI arguments, use `run`:
 
 ```bash
-./sandbox run agent01 codex --version
+./sandbox agent01 run codex --version
 ```
 
 If you want a desktop UI to manage a session, start it from that UI. A desktop
@@ -250,14 +250,14 @@ Add `--tools tokentracker` to a new sandbox's `up` command, or change an
 existing sandbox:
 
 ```bash
-./sandbox tools agent01 enable tokentracker
-./sandbox tools agent01 list
-./sandbox tools agent01 check
-./sandbox tool agent01 tokentracker --version
+./sandbox agent01 tools enable tokentracker
+./sandbox agent01 tools list
+./sandbox agent01 tools check
+./sandbox agent01 tool tokentracker --version
 ```
 
 Tools support `set`, `enable`, `disable`, and `update` exactly like agents, and
-`./sandbox tools agent01 set none` clears them all. Inside the sandbox, use
+`./sandbox agent01 tools set none` clears them all. Inside the sandbox, use
 `sandbox-tools`. A fresh home starts with no tools selected. Recreating without
 `--tools` reuses the saved selection, `--tools none` wipes it, and `--tools all`
 requires both Hermes and DeepSeek to be enabled.
@@ -269,8 +269,8 @@ so disabling either agent disables its UI too. Neither UI needs its own volume.
 ### TokenTracker
 
 ```bash
-./sandbox tools agent01 enable tokentracker
-./sandbox forward agent01 tokentracker
+./sandbox agent01 tools enable tokentracker
+./sandbox agent01 forward tokentracker
 ```
 
 Open <http://127.0.0.1:7680> and keep the tunnel running. TokenTracker only sees
@@ -283,8 +283,8 @@ Initial setup may install hooks inside the sandbox.
 To set up T3 Connect, run these commands on the host:
 
 ```bash
-./sandbox tools agent01 enable t3
-./sandbox tools agent01 setup t3
+./sandbox agent01 tools enable t3
+./sandbox agent01 tools setup t3
 ```
 
 Setup requires T3 to be enabled and installed. It runs
@@ -296,17 +296,17 @@ The sandbox must remain running for remote access.
 
 The managed server runs `t3 serve --host 127.0.0.1 --port 3773` in tmux. It starts
 after Connect setup and is restored whenever the existing sandbox starts again,
-including after `./sandbox stop agent01` followed by `./sandbox start agent01`.
+including after `./sandbox agent01 stop` followed by `./sandbox agent01 start`.
 Keep the `t3` tool enabled for this automatic restoration. You do not need to run
 `t3 serve` manually or install a systemd service inside the container.
 
 If you used plain `t3 connect` and its background-service setup failed, start the
-sandbox-managed server from the host with `./sandbox service agent01 t3 restart`.
-Inspect failures with `./sandbox service agent01 t3 logs`. The Connect helper
+sandbox-managed server from the host with `./sandbox agent01 service t3 restart`.
+Inspect failures with `./sandbox agent01 service t3 logs`. The Connect helper
 uses `connect link --headless` to avoid that background-service installer.
 
 Automatic sandbox startup after a host-machine reboot is not configured by this
-launcher. Start the sandbox with `./sandbox start agent01` after the host boots;
+launcher. Start the sandbox with `./sandbox agent01 start` after the host boots;
 enabled T3 is then restored inside it.
 
 Sign in to the same T3 Connect account on your other device and select this
@@ -318,39 +318,39 @@ See [T3 remote access](https://github.com/pingdotgg/t3code/blob/main/docs/user/r
 Check saved setup or revoke access from the host with:
 
 ```bash
-./sandbox tool agent01 t3 connect status
-./sandbox tool agent01 t3 connect logout
-./sandbox service agent01 t3 restart
+./sandbox agent01 tool t3 connect status
+./sandbox agent01 tool t3 connect logout
+./sandbox agent01 service t3 restart
 ```
 
 Status reports saved configuration, not live reachability. Existing containers
-need `./sandbox update agent01` to get this helper. If a pinned T3 version lacks
+need `./sandbox agent01 update` to get this helper. If a pinned T3 version lacks
 `connect link --headless`, update T3 first.
 
 For direct pairing through an SSH forward:
 
 ```bash
-./sandbox tools agent01 enable t3
-./sandbox forward agent01 t3
+./sandbox agent01 tools enable t3
+./sandbox agent01 forward t3
 ```
 
-In a second host terminal, run `./sandbox tool agent01 t3 pair` and follow the
-pairing instructions at <http://127.0.0.1:3773>. `./sandbox t3 agent01` tails the
+In a second host terminal, run `./sandbox agent01 tool t3 pair` and follow the
+pairing instructions at <http://127.0.0.1:3773>. `./sandbox agent01 t3` tails the
 managed server's logs. Both pairing URLs and logs can contain private tokens, so
 treat them accordingly.
 
 The T3 desktop app can also manage its own SSH runtime; see
 [desktop control](ARCHITECTURE.md#desktop-control). If you go that route,
-disable this tool with `./sandbox tools agent01 disable t3` so you are not
+disable this tool with `./sandbox agent01 tools disable t3` so you are not
 running two servers. Disabling the tool has no effect on the desktop's runtime.
 
 ### Hermes dashboard
 
 ```bash
-./sandbox agents agent01 enable hermes
-./sandbox agents agent01 login hermes
-./sandbox tools agent01 enable hermes-dashboard
-./sandbox forward agent01 hermes-dashboard
+./sandbox agent01 agents enable hermes
+./sandbox agent01 agents login hermes
+./sandbox agent01 tools enable hermes-dashboard
+./sandbox agent01 forward hermes-dashboard
 ```
 
 Open <http://127.0.0.1:9119>. The dashboard shares the agent's checkout, Python
@@ -359,25 +359,25 @@ select the tool. Enabling the Hermes agent alone installs just the CLI. No
 native Electron desktop components are installed and no messaging gateway
 starts by itself.
 
-`./sandbox tools agent01 disable hermes-dashboard` turns off the dashboard and
+`./sandbox agent01 tools disable hermes-dashboard` turns off the dashboard and
 leaves the CLI enabled, with cached assets and settings intact.
 [Hermes dashboard documentation](https://hermes-agent.nousresearch.com/docs/user-guide/features/web-dashboard).
 
 ### DeepSeek UI
 
 ```bash
-./sandbox agents agent01 enable deepseek
-./sandbox tools agent01 enable deepseek-ui
-./sandbox forward agent01 deepseek-ui
+./sandbox agent01 agents enable deepseek
+./sandbox agent01 tools enable deepseek-ui
+./sandbox agent01 forward deepseek-ui
 ```
 
-In a second host terminal, run `./sandbox service agent01 deepseek-ui logs` to
+In a second host terminal, run `./sandbox agent01 service deepseek-ui logs` to
 find the private access URL. Open it locally, then configure model credentials
 and `/workspace`. A request without the access token can come back as HTTP 401,
 so use the full URL. When forwarding to a different local port, change only the
 host and port and keep the token.
 
-`./sandbox tools agent01 disable deepseek-ui` turns off the UI and leaves the
+`./sandbox agent01 tools disable deepseek-ui` turns off the UI and leaves the
 CLI enabled. The UI ships inside the Harness package, so selection controls its
 service lifecycle rather than what gets downloaded.
 [Harness CLI reference](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/cli/reference/README.md).
@@ -387,9 +387,9 @@ service lifecycle rather than what gets downloaded.
 Any tool ID works in place of `tokentracker`:
 
 ```bash
-./sandbox service agent01 tokentracker status
-./sandbox service agent01 tokentracker logs
-./sandbox service agent01 tokentracker restart
+./sandbox agent01 service tokentracker status
+./sandbox agent01 service tokentracker logs
+./sandbox agent01 service tokentracker restart
 ```
 
 `start` and `stop` work too. A stop is temporary: container startup, forwarding,
@@ -407,17 +407,17 @@ service and forward aliases for `hermes-dashboard` and `deepseek-ui`.
 Updates are always explicit; a normal start reuses whatever is cached:
 
 ```bash
-./sandbox agents agent01 update all
-./sandbox tools agent01 update all
+./sandbox agent01 agents update all
+./sandbox agent01 tools update all
 ```
 
 Here `all` means everything currently enabled in that namespace. To pin a
 published version, swap in real values for the placeholders:
 
 ```bash
-./sandbox agents agent01 enable codex@X.Y.Z
-./sandbox tools agent01 enable tokentracker@X.Y.Z
-./sandbox agents agent01 enable hermes@FULL_COMMIT_SHA
+./sandbox agent01 agents enable codex@X.Y.Z
+./sandbox agent01 tools enable tokentracker@X.Y.Z
+./sandbox agent01 agents enable hermes@FULL_COMMIT_SHA
 ```
 
 Hermes accepts a branch, a tag, or a full 40-character commit. T3 and

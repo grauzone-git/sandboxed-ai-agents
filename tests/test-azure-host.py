@@ -209,7 +209,7 @@ else:
 
     def test_missing_ssh_opt_in_prints_exact_command(self):
         self.config.unlink()
-        with self.assertRaisesRegex(ValueError, r'./sandbox(?:.ps1)? ssh-config demo --install'):
+        with self.assertRaisesRegex(ValueError, r'./sandbox(?:.ps1)? demo ssh-config --install'):
             self.run_login()
         self.assertFalse((self.root / 'arguments').exists())
 

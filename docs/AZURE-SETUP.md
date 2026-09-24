@@ -14,15 +14,15 @@ separate and remains unverified.
 On a Linux host:
 
 ```bash
-./sandbox tools agent01 setup azure --tenant TENANT --subscription SUBSCRIPTION
-./sandbox tools agent01 setup azure --interactive --tenant TENANT --subscription SUBSCRIPTION
+./sandbox agent01 tools setup azure --tenant TENANT --subscription SUBSCRIPTION
+./sandbox agent01 tools setup azure --interactive --tenant TENANT --subscription SUBSCRIPTION
 ```
 
 On a native Windows host:
 
 ```powershell
-./sandbox.ps1 tools agent01 setup azure --tenant TENANT --subscription SUBSCRIPTION
-./sandbox.ps1 tools agent01 setup azure --interactive --tenant TENANT --subscription SUBSCRIPTION
+./sandbox.ps1 agent01 tools setup azure --tenant TENANT --subscription SUBSCRIPTION
+./sandbox.ps1 agent01 tools setup azure --interactive --tenant TENANT --subscription SUBSCRIPTION
 ```
 
 Quote subscription names containing spaces. Omitted tenant and subscription
@@ -42,10 +42,10 @@ Browser setup requires managed SSH access that was explicitly opted into
 previously. If missing, the command prints the exact setup command:
 
 ```bash
-./sandbox ssh-config agent01 --install
+./sandbox agent01 ssh-config --install
 ```
 
-Use `./sandbox.ps1 ssh-config agent01 --install` on native Windows. Azure setup
+Use `./sandbox.ps1 agent01 ssh-config --install` on native Windows. Azure setup
 does not create SSH files itself. Linux needs OpenSSH and `xdg-open` with a
 working default browser. Windows uses Windows OpenSSH and the default Windows
 browser; it does not use Unix SSH control sockets. Existing rootless Podman,
@@ -178,7 +178,7 @@ output or tokens. Failed checks identify the operation, exit code when available
 and failure type so lifecycle, SSH, and Azure probe failures remain distinct. A failure or interruption returns exit 1 and retains the
 sandbox for inspection. Successful runs remove their sandbox and volumes unless
 `--keep-sandbox` is supplied. Remove a retained disposable sandbox with
-`./sandbox remove NAME --volumes` (use `./sandbox.ps1` on Windows).
+`./sandbox NAME remove --volumes` (use `./sandbox.ps1` on Windows).
 
 `--skip-renewal` and `--skip-cancellation` permit shorter runs and record those
 checks as skipped. Exit 0 means the executed checks passed; it does not mean
@@ -217,15 +217,15 @@ sign-in only.
 
    ```bash
    ./sandbox build
-   ./sandbox up azure-auth-smoke --ssh-port 2299 --agents codex --ssh-config
-   ./sandbox tools azure-auth-smoke setup azure --interactive --cloud AzureCloud --tenant TENANT --tenant-only
+   ./sandbox azure-auth-smoke up --ssh-port 2299 --agents codex --ssh-config
+   ./sandbox azure-auth-smoke tools setup azure --interactive --cloud AzureCloud --tenant TENANT --tenant-only
    ```
 
    Use the `.ps1` launcher on native Windows. Repeat independently with
    AzureChinaCloud and a tenant in that cloud. Record only sanitized outcomes,
    never authorization URLs, device codes, tokens, or callback values.
 3. After the setup command has returned and its tunnel has closed, enter the
-   disposable sandbox with `./sandbox shell azure-auth-smoke` (or `.ps1`). Run:
+   disposable sandbox with `./sandbox azure-auth-smoke shell` (or `.ps1`). Run:
 
    ```bash
    az cloud show --query name --output tsv
@@ -249,7 +249,7 @@ sign-in only.
    the prior working session. Check Azure DevOps defaults and native/PAT state
    before and after setup and `az logout`; do not print credential files.
 7. Remove only the disposable sandbox with
-   `./sandbox remove azure-auth-smoke --volumes` (or `.ps1`).
+   `./sandbox azure-auth-smoke remove --volumes` (or `.ps1`).
 
 Offline regression tests cover setup defaults, cloud and context selection,
 replacement rollback, callback validation/lifecycle, and host argument handling.

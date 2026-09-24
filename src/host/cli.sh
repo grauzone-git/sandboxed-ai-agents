@@ -7,11 +7,13 @@ fail() { printf 'Error: %s\n' "$*" >&2; exit 1; }
 for module in args podman ssh lifecycle; do
     source "$ROOT/src/host/lib/$module.sh"
 done
-parse_cli_args "$@"
+# Translate NAME COMMAND ... into the internal COMMAND NAME ... form.
+# The status travels as the last element; set -e would otherwise drop it.
+readarray -d '' -t normalized < <(python3 -B "$ROOT/src/host/grammar.py" ./sandbox "$@" && printf '0\0' || printf '%s\0' "$?")
+[[ ${normalized[-1]} == 0 ]] || exit "${normalized[-1]}"
+unset 'normalized[-1]'
+parse_cli_args "${normalized[@]}"
 set -- "${CLI_ARGS[@]}"
-if [[ $action == azdo ]]; then
-    exec python3 -B "$ROOT/src/host/azdo.py" "$@"
-fi
 if [[ $action == update ]]; then
     # Help and missing-argument errors do not need a running Podman service.
     if [[ $# -gt 0 && $1 != --help && $1 != -h ]]; then require_podman; fi
@@ -42,7 +44,7 @@ case "$action" in
         connect -t "$NAME" "$manager_command session $action"
         ;;
     agents|tools)
-        [[ $# -ge 1 ]] || fail "Usage: ./sandbox $action NAME [list|check|set|enable|disable|update LIST|login TARGET]"
+        [[ $# -ge 1 ]] || fail "Usage: ./sandbox NAME $action [list|check|set|enable|disable|update LIST|login TARGET]"
         manager_function=agent_manager
         [[ $action != tools ]] || manager_function=tool_manager
         operation=${2:-list}
@@ -50,7 +52,7 @@ case "$action" in
             login|setup) ;; # Validated before contacting Podman.
             list|check) [[ $# -le 2 ]] || fail 'Unexpected argument.' ;;
             set|enable|disable|update)
-                [[ $# -eq 3 ]] || fail "Usage: ./sandbox $action NAME $operation LIST"
+                [[ $# -eq 3 ]] || fail "Usage: ./sandbox NAME $action $operation LIST"
                 spec=$(python3 "$ROOT/src/host/agent-selection.py" "$3" "$action")
                 # Preserve all for update: it means all ENABLED agents.
                 [[ $3 != all || $operation != update ]] || spec=all
@@ -76,7 +78,7 @@ case "$action" in
         esac
         ;;
     run|tool)
-        [[ $# -ge 2 ]] || fail "Usage: ./sandbox $action NAME COMMAND [arguments...]"
+        [[ $# -ge 2 ]] || fail "Usage: ./sandbox NAME $action COMMAND [arguments...]"
         manager_command=/usr/local/bin/sandbox-agents
         [[ $action != tool ]] || manager_command=/usr/local/bin/sandbox-tools
         owned
@@ -86,7 +88,7 @@ case "$action" in
         exec podman exec "${interactive[@]}" --user 1000:1000 --workdir /workspace "$NAME" "$manager_command" run "$@"
         ;;
     service)
-        [[ $# -ge 2 && $# -le 3 ]] || fail 'Usage: ./sandbox service NAME t3|hermes-dashboard|deepseek-ui|tokentracker [status|start|stop|restart|logs]'
+        [[ $# -ge 2 && $# -le 3 ]] || fail 'Usage: ./sandbox NAME service t3|hermes-dashboard|deepseek-ui|tokentracker [status|start|stop|restart|logs]'
         owned
         if [[ $2 == tokentracker || $2 == t3 || $2 == hermes || $2 == hermes-dashboard || $2 == deepseek || $2 == deepseek-ui ]]; then
             service_id=$2
@@ -98,7 +100,7 @@ case "$action" in
         fi
         ;;
     forward)
-        [[ $# -ge 2 && $# -le 3 ]] || fail 'Usage: ./sandbox forward NAME t3|hermes-dashboard|deepseek-ui|tokentracker [LOCAL_PORT]'
+        [[ $# -ge 2 && $# -le 3 ]] || fail 'Usage: ./sandbox NAME forward t3|hermes-dashboard|deepseek-ui|tokentracker [LOCAL_PORT]'
         case "$2" in
             t3) remote_port=3773 ;;
             hermes|hermes-dashboard) remote_port=9119 ;;

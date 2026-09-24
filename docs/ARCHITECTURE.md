@@ -85,7 +85,7 @@ own runtime under `~/.t3/runtime`, and the separately selected
 For **Kandev**, use an SSH executor with the container's loopback address, its
 published SSH port, user `agent`, and the dedicated key from
 `~/.ssh/sanboxed-agents/agent01/`. Compare the host fingerprint it shows with
-`./sandbox fingerprint agent01`. If task checkouts have to sit under
+`./sandbox agent01 fingerprint`. If task checkouts have to sit under
 `/workspace`, check the documented `ssh_workdir_root` setting. The Docker
 executor that was reviewed binds helpers and credentials in ways that conflict
 with this repository's storage rule.

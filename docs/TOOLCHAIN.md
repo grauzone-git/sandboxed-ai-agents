@@ -59,14 +59,14 @@ are shared between sandboxes; installations and caches are not.
 On the host, select the capability when creating a sandbox:
 
 ```bash
-./sandbox up agent01 --agents codex --capabilities podman --ssh-config
+./sandbox agent01 up --agents codex --capabilities podman --ssh-config
 ```
 
 Or enable it on an existing sandbox, retaining its workspace, home, SSH access,
 and agent/tool selections:
 
 ```bash
-./sandbox update agent01 --no-build --capabilities podman
+./sandbox agent01 update --no-build --capabilities podman
 ```
 
 Update stops and recreates the sandbox, so save work first. `--no-build` reuses
@@ -97,7 +97,7 @@ metadata under `~/.local/share/containers/storage`, in the existing named home
 volume. They survive sandbox recreation. Transient runtime state, including
 the runroot and libpod temporary files, lives on a tmpfs at `/run/user/1000`
 that is cleared whenever the outer sandbox stops. Existing sandboxes need
-`./sandbox update NAME --no-build` to adopt this mount. Running inner processes
+`./sandbox NAME update --no-build` to adopt this mount. Running inner processes
 stop with the outer sandbox; restart your test containers afterwards. Inner cgroups are
 disabled because SSH sessions have no delegated cgroup manager. The outer
 sandbox's CPU, memory, and process limits still apply to the whole sandbox;
@@ -121,7 +121,7 @@ paths inside the sandbox, such as `/workspace`.
 
 Capabilities accept `podman` or `none` (the default), with unknown or duplicate
 entries rejected. Normal updates preserve each sandbox's selection. To remove
-the capability, use `./sandbox update agent01 --no-build --capabilities none`;
+the capability, use `./sandbox agent01 update --no-build --capabilities none`;
 saved inner images and volumes remain in the home volume.
 
 The image replaces the mapping helpers' setuid bits with specific file
@@ -129,7 +129,7 @@ capabilities: `cap_setuid=ep` for `newuidmap` and `cap_setgid=ep` for `newgidmap
 Debian's default setuid helpers can fail with `write to uid_map failed:
 Operation not permitted` inside a rootless container. If you have an older
 capability image, update the sandbox from the host with
-`./sandbox update agent01 --no-build` to build and apply the corrected layer.
+`./sandbox agent01 update --no-build` to build and apply the corrected layer.
 
 The capability allows these file capabilities by omitting `no-new-privileges`,
 passes `/dev/fuse` for storage and `/dev/net/tun` for nested networking,
@@ -142,7 +142,7 @@ permission checks still apply. The configuration does not use `--privileged` or
 mount a host engine socket. See the [security policy](../SECURITY.md).
 
 If an older sandbox fails during a build with `sethostname: Operation not
-permitted`, recreate it from the host with `./sandbox update agent01 --no-build`.
+permitted`, recreate it from the host with `./sandbox agent01 update --no-build`.
 An existing process cannot relax its inherited seccomp filter. Update generates
 the profile under the controller's protected `.local` directory before stopping
 the sandbox; a missing or invalid host profile aborts the update.
@@ -150,7 +150,7 @@ This follows the [Podman nesting approach documented by Red Hat](https://www.red
 
 ## Work inside the sandbox
 
-Open a shell from the host with `./sandbox shell agent01`. Everything in the
+Open a shell from the host with `./sandbox agent01 shell`. Everything in the
 sections below runs **inside that terminal**, with `/workspace` as the project
 root.
 
@@ -175,7 +175,7 @@ mounted, which is the point.
 Run this command on the host:
 
 ```bash
-./sandbox tools agent01 login github
+./sandbox agent01 tools login github
 ```
 
 The helper runs `gh auth login --hostname github.com --git-protocol https --web`
@@ -206,7 +206,7 @@ gh auth logout --hostname github.com
 
 For GitHub Enterprise or other authentication options, run `gh auth login`
 and `gh auth setup-git` with the appropriate `--hostname` inside the sandbox.
-Existing containers need `./sandbox update agent01` from the host to rebuild
+Existing containers need `./sandbox agent01 update` from the host to rebuild
 and recreate them with the helper, retaining their named volumes.
 
 ### .NET
@@ -267,9 +267,9 @@ image. [Playwright browser documentation](https://playwright.dev/docs/browsers).
 
 ### Azure CLI and Azure DevOps
 
-Use `./sandbox tools agent01 setup azure` for sandbox-owned Azure CLI sign-in,
+Use `./sandbox agent01 tools setup azure` for sandbox-owned Azure CLI sign-in,
 or add `--interactive` for a host browser with temporary SSH callback forwarding.
-Native Windows uses `./sandbox.ps1 tools agent01 setup azure`. See
+Native Windows uses `./sandbox.ps1 agent01 tools setup azure`. See
 [Azure setup and validation](AZURE-SETUP.md) for cloud, tenant, subscription,
 replacement, logout, and the live validation matrix. Azure DevOps setup
 below remains independent.
@@ -281,7 +281,7 @@ az devops --help
 ```
 
 The DevOps extension and PowerShell are installed system-wide in the image.
-Rebuild and recreate existing sandboxes with `./sandbox update agent01` to get
+Rebuild and recreate existing sandboxes with `./sandbox agent01 update` to get
 `sandbox-azdo` and `pwsh`, retaining their named volumes. PowerShell installs
 from [Microsoft's Debian package repository](https://learn.microsoft.com/en-us/powershell/scripting/install/install-debian).
 The package installation targets amd64; ARM64 needs a separate PowerShell
@@ -293,10 +293,10 @@ On the host, choose how the sandbox should keep the PAT:
 
 ```bash
 # Native Azure DevOps credential storage, using az devops login:
-./sandbox tools agent01 setup azdo
+./sandbox agent01 tools setup azdo
 
 # Persist AZURE_DEVOPS_EXT_PAT for new sandbox shells and agents instead:
-./sandbox tools agent01 setup azdo --persist
+./sandbox agent01 tools setup azdo --persist
 ```
 
 Both modes ask for the default organization URL, for example
@@ -347,7 +347,7 @@ project with `az devops configure --defaults project='My Project'`, or pass
 Remove the saved environment PAT from the host with:
 
 ```bash
-./sandbox tools agent01 setup azdo --clear
+./sandbox agent01 tools setup azdo --clear
 ```
 
 This removes the environment file, including the helper's saved organization.
@@ -365,7 +365,7 @@ Windows PowerShell uses the same setup command through WSL; the PAT is entered
 at the sandbox prompt, not on the command line:
 
 ```powershell
-wsl.exe --distribution Ubuntu --cd /home/me/sandboxed-ai-agents --exec ./sandbox tools agent01 setup azdo --persist
+wsl.exe --distribution Ubuntu --cd /home/me/sandboxed-ai-agents --exec ./sandbox agent01 tools setup azdo --persist
 ```
 
 #### Azure DevOps with an environment PAT
@@ -420,57 +420,9 @@ Remove-Item Env:AZURE_DEVOPS_EXT_PAT -ErrorAction SilentlyContinue
 If entering a replacement interactively in PowerShell 7, use
 `$env:AZURE_DEVOPS_EXT_PAT = Read-Host 'Azure DevOps PAT' -MaskInput`.
 
-#### Explicit host-to-sandbox PAT transport
-
-On the Linux host, with `AZURE_DEVOPS_EXT_PAT` already exported:
-
-```bash
-./sandbox azdo agent01 --pat-env -- devops project list --organization https://dev.azure.com/contoso
-./sandbox azdo agent01 --pat-env -- repos list --organization https://dev.azure.com/contoso --project 'My Project'
-unset AZURE_DEVOPS_EXT_PAT
-```
-
-`--pat-env` is required even when the variable exists. The launcher checks
-rootless Podman and checkout ownership before sending a JSON-encoded token
-over stdin to the selected sandbox as UID 1000. It does not use a TTY, a shell
-command containing the token, `podman --env`, SSH credential forwarding, or a
-credential mount. Host Azure login state is untouched. Command stdin is reserved
-for token transport, and output is buffered until completion (up to 64 MiB per
-stream inside the sandbox).
-
-On Windows, use Windows PowerShell or PowerShell 7 with WSL. Create and manage
-the sandbox using the Linux launcher and rootless Podman in that WSL distro.
-The native Windows launcher does not yet expose these Azure DevOps operations;
-this workflow uses the Linux launcher through WSL. With the PAT already in the
-Windows PowerShell process environment, temporarily opt it into WSL forwarding:
-
-```powershell
-if ([string]::IsNullOrEmpty($env:AZURE_DEVOPS_EXT_PAT)) {
-    throw 'Set a nonempty AZURE_DEVOPS_EXT_PAT in this PowerShell process first.'
-}
-$previousWslEnv = $env:WSLENV
-try {
-    $env:WSLENV = 'AZURE_DEVOPS_EXT_PAT/u'
-    wsl.exe --distribution Ubuntu --cd /home/me/sandboxed-ai-agents --exec ./sandbox azdo agent01 --pat-env -- devops project list --organization https://dev.azure.com/contoso
-    if ($LASTEXITCODE -ne 0) { throw "Azure DevOps command failed (exit $LASTEXITCODE)." }
-} finally {
-    $env:WSLENV = $previousWslEnv
-    Remove-Item Env:AZURE_DEVOPS_EXT_PAT -ErrorAction SilentlyContinue
-}
-```
-
-Replace the distro and checkout path with those used to create your sandbox.
-[`WSLENV`](https://learn.microsoft.com/en-us/windows/wsl/filesystems#share-environment-variables-between-windows-and-wsl-with-wslenv)
-contains the variable name only; `/u` forwards it toward WSL. This
-example temporarily replaces the forwarding list and restores it afterwards.
-Never interpolate the PAT into a `wsl.exe`, `podman`, or Azure CLI argument.
-
 #### Lifetime, errors and validation
 
-The host workflow makes the token available only to that `az` invocation and
-its children. It does not make it available to subsequent commands, existing
-agents, managed terminal sessions, or SSH sessions. Run the host command again
-to reuse or replace the token. Inside a shell, an exported variable is inherited
+Inside a shell, an exported variable is inherited
 by newly started children until you unset it or close the shell. Unsetting it
 does not erase copies already inherited by running agents; stop those processes
 to remove their access.
@@ -494,17 +446,17 @@ text with the token redacted. Check PAT expiration, organization membership and
 the scope required by the operation when Azure rejects a request. No fallback
 login is attempted.
 
-Offline tests use dummy PATs and fake Podman/Azure CLI executables. They cover
-explicit opt-in, missing values, literal transport, isolation, native errors,
-setup modes, replacement, cleanup and startup environment loading.
+Offline tests use dummy PATs and fake Azure CLI executables. They cover
+missing values, isolation, native errors, setup modes, replacement, cleanup and
+startup environment loading. The earlier host `azdo --pat-env` command was
+removed; persisted setup covers the same need.
 User-reported live validation: Azure DevOps setup completed successfully, and
 a DevOps work item was changed from inside the sandbox. The report did not
 specify the platform, setup mode, exact command or exit status. This confirms
 a successful authenticated operation in the user's environment; it is separate
 from the offline suite and was not independently executed by the agent.
 
-Still to record: the read-only `devops project list` example on Linux and
-Windows/WSL, and an expired or revoked test PAT failure. Record only the platform,
+Still to record: the read-only `sandbox-azdo devops project list` example, and an expired or revoked test PAT failure. Record only the platform,
 date, command without secrets, exit status and success/failure summary. Never
 include a real PAT in test artifacts, issue comments or validation records.
 
@@ -513,9 +465,9 @@ include a real PAT in test artifacts, issue comments or validation records.
 Run these from the **host**, with SSH configured:
 
 ```bash
-./sandbox check agent01
+./sandbox agent01 check
 # Optional: downloads browsers and packages, builds temporary test projects.
-./sandbox check-full agent01
+./sandbox agent01 check-full
 ```
 
 `check` verifies the installed tools and the explicit mount inventory.

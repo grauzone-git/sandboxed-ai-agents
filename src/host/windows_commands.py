@@ -28,13 +28,13 @@ class Command:
 
 def parse(action, args, project, validate_name, selections):
     if not args:
-        raise ValueError(f'Use {action} NAME [list|check|set|enable|disable|update LIST].')
+        raise ValueError(f'Use NAME {action} [list|check|set|enable|disable|update LIST].')
     name = validate_name(args[0])
     if action in ('service', 'forward'):
         catalog = json.loads((project / 'src/container/tools.json').read_text())
         target = {'hermes': 'hermes-dashboard', 'deepseek': 'deepseek-ui'}.get(args[1], args[1]) if len(args) > 1 else ''
         if len(args) not in (2, 3) or target not in catalog or not catalog[target].get('service'):
-            raise ValueError(f'Use {action} NAME t3|hermes-dashboard|deepseek-ui|tokentracker [OPTION].')
+            raise ValueError(f'Use NAME {action} t3|hermes-dashboard|deepseek-ui|tokentracker [OPTION].')
         if action == 'service':
             operation = args[2] if len(args) == 3 else 'status'
             if operation not in ('status', 'start', 'stop', 'restart', 'logs'):
@@ -47,13 +47,13 @@ def parse(action, args, project, validate_name, selections):
         return Command(name, 'tools', ['service', target, 'start'], forward=(int(local), remote))
     if action in SESSIONS:
         if len(args) != 1:
-            raise ValueError(f'Use {action} NAME; use run/tool for additional arguments.')
+            raise ValueError(f'Use NAME {action}; use NAME run/tool for additional arguments.')
         return Command(name, 'tools' if action == 't3' else 'agents', ['session', action], True)
     if action in ('run', 'tool'):
         kind = 'agents' if action == 'run' else 'tools'
         catalog = json.loads((project / f'src/container/{kind}.json').read_text())
         if len(args) < 2 or args[1] not in catalog:
-            raise ValueError(f'Use {action} NAME followed by a valid {kind[:-1]} ID and optional arguments.')
+            raise ValueError(f'Use NAME {action} followed by a valid {kind[:-1]} ID and optional arguments.')
         return Command(name, kind, ['run', *args[1:]], True)
     operation = args[1] if len(args) > 1 else 'list'
     if operation in ('list', 'check') and len(args) <= 2:
@@ -70,12 +70,12 @@ def parse(action, args, project, validate_name, selections):
         if (len(args) == 3 and args[2] in ('t3', 'azdo')) or (
                 len(args) == 4 and args[2] == 'azdo' and args[3] in ('--persist', '--clear')):
             return Command(name, action, args[1:], True)
-        raise ValueError('Use tools NAME setup t3, or setup azdo [--persist|--clear].')
+        raise ValueError('Use NAME tools setup t3, or NAME tools setup azdo [--persist|--clear].')
     if len(args) == 3:
         allowed = ('codex', 'claude', 'opencode', 'copilot', 'hermes') if action == 'agents' else ('github',)
         if operation == 'login' and args[2] in allowed:
             return Command(name, action, ['login', args[2]], True)
-    raise ValueError(f'Invalid {action} operation or arguments; use list, check, set, enable, disable, update, login, or tools setup t3|azdo.')
+    raise ValueError(f'Invalid {action} operation or arguments; use list, check, set, enable, disable, update, login, or NAME tools setup t3|azdo.')
 
 
 def require_forward_port(port):
@@ -97,7 +97,7 @@ def execute(runtime, project, command):
         if options.interactive:
             state = Path.home() / '.ssh/sanboxed-agents' / command.name
             if not (state / f'{command.name}.conf').is_file():
-                raise ValueError(f'Configure SSH first: ./sandbox.ps1 ssh-config {command.name} --install')
+                raise ValueError(f'Configure SSH first: ./sandbox.ps1 {command.name} ssh-config --install')
             setup = SshSetup(runtime, project, command.name, require_keygen=False)
             azure_interactive(command.name, setup.state / f'{command.name}.conf', command.arguments[2:])
             return
@@ -110,7 +110,7 @@ def execute(runtime, project, command):
         setup = SshSetup(runtime, project, command.name, require_keygen=False)
         config = setup.state / f'{command.name}.conf'
         if not all(path.is_file() for path in (config, setup.state / 'known_hosts', setup.state / 'id_ed25519')):
-            raise ValueError(f'Configure SSH first: ./sandbox.ps1 ssh-config {command.name} --install')
+            raise ValueError(f'Configure SSH first: ./sandbox.ps1 {command.name} ssh-config --install')
         require_forward_port(command.forward[0])
     interactive = []
     if command.interactive:

@@ -1,7 +1,7 @@
 # Container lifecycle. Each operation receives NAME and its original arguments.
 
 create_sandbox() {
-    podman container exists "$NAME" && fail "Container exists. Use ./sandbox start $NAME."
+    podman container exists "$NAME" && fail "Container exists. Use ./sandbox $NAME start."
     local workspace_path= workspace_mount volume sandbox_image
     local volumes=("$NAME-home" "$NAME-sshd") missing_volumes=()
     if [[ $# -ge 2 ]]; then

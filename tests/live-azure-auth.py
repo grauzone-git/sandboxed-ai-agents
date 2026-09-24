@@ -65,9 +65,9 @@ class Validation:
             raise CommandFailure(result.returncode)
         return result.stdout or ''
 
-    def sandbox(self, *args, interactive=False):
-        self.operation = 'azure_setup' if args[0] == 'tools' else args[0]
-        return self.execute([*self.launcher, *args], interactive=interactive, timeout=1200)
+    def sandbox(self, command, *args, interactive=False):
+        self.operation = 'azure_setup' if command == 'tools' else command
+        return self.execute([*self.launcher, self.name, command, *args], interactive=interactive, timeout=1200)
 
     def ssh_command(self, command):
         config = Path.home() / '.ssh/sanboxed-agents' / self.name / (self.name + '.conf')
@@ -103,7 +103,7 @@ class Validation:
         return result
 
     def login_arguments(self, remembered=False):
-        args = ['tools', self.name, 'setup', 'azure', '--interactive', '--tenant', self.options.tenant_id,
+        args = ['tools', 'setup', 'azure', '--interactive', '--tenant', self.options.tenant_id,
                 '--tenant-only']
         if not remembered:
             args += ['--cloud', self.options.azure_environment]
@@ -118,7 +118,7 @@ class Validation:
         print('Cancellation check: when the browser opens, press Ctrl+C here BEFORE completing sign-in.', flush=True)
         if input('Ready to test cancellation? [yes/no] ').strip().lower() != 'yes':
             raise ValueError('Cancellation test was not confirmed.')
-        child = subprocess.Popen([*self.launcher, *self.login_arguments()], cwd=PROJECT, env=self.env,
+        child = subprocess.Popen([*self.launcher, self.name, *self.login_arguments()], cwd=PROJECT, env=self.env,
                                  start_new_session=os.name != 'nt')
         try:
             try:
@@ -192,7 +192,7 @@ class Validation:
     def run(self):
         stage = 'create'
         try:
-            self.sandbox('up', self.name, '--ssh-port', str(self.options.ssh_port),
+            self.sandbox('up', '--ssh-port', str(self.options.ssh_port),
                          '--agents', self.options.agents, '--ssh-config')
             self.record(stage, 'passed')
             stage = 'versions'
@@ -202,12 +202,12 @@ class Validation:
             self.login()
             self.probe(stage)
             stage = 'restart'
-            self.sandbox('stop', self.name)
-            self.sandbox('start', self.name)
+            self.sandbox('stop')
+            self.sandbox('start')
             self.wait_for_ssh()
             self.probe(stage)
             stage = 'recreation'
-            self.sandbox('update', self.name, '--no-build')
+            self.sandbox('update', '--no-build')
             self.wait_for_ssh()
             baseline = self.probe(stage)
             stage = 'renewal'
@@ -244,7 +244,7 @@ class Validation:
             failed = any(item['status'] == 'failed' for item in self.evidence['checks'])
             if not self.options.keep_sandbox and not failed:
                 stage = 'cleanup'
-                self.sandbox('remove', self.name, '--volumes')
+                self.sandbox('remove', '--volumes')
                 self.record(stage, 'passed')
             else:
                 self.record('cleanup', 'skipped', reason='Sandbox retained by request or because a check failed.')

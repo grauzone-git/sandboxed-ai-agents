@@ -218,7 +218,7 @@ function createManager({
     const dependency = entry(id).agent;
     if (!dependency) return;
     const agents = readJson(path.join(home, '.local/state/sandbox-agents/config.json'), { enabled: {} }).enabled;
-    if (!Object.hasOwn(agents, dependency)) fail(`${id} requires the enabled ${dependency} agent. Use: sandbox agents NAME enable ${dependency}`);
+    if (!Object.hasOwn(agents, dependency)) fail(`${id} requires the enabled ${dependency} agent. Use: sandbox NAME agents enable ${dependency}`);
     if (!fs.existsSync(executable(id))) fail(`${dependency} is missing. Re-enable that agent first.`);
   }
   function list() {
@@ -231,7 +231,7 @@ function createManager({
   }
   function requireEnabled(id) {
     entry(id);
-    if (!Object.hasOwn(current().enabled, id)) fail(`${id} is disabled. Enable it with: sandbox ${kind}s NAME enable ${id}`);
+    if (!Object.hasOwn(current().enabled, id)) fail(`${id} is disabled. Enable it with: sandbox NAME ${kind}s enable ${id}`);
     requireDependency(id);
     const command = executable(id);
     if (!fs.existsSync(command)) fail(`${id} is missing. Reapply its agent selection to install it.`);
@@ -279,7 +279,7 @@ function createManager({
     }
     if (!id || extra.length) fail('Usage: sandbox-agents login codex|claude|opencode|copilot|hermes');
     const info = entry(id);
-    if (!info.login) fail(`Managed login is not supported for ${id}. Use sandbox run NAME ${id} with its own authentication command.`);
+    if (!info.login) fail(`Managed login is not supported for ${id}. Use sandbox NAME run ${id} with its own authentication command.`);
     requireEnabled(id);
     console.log(info.loginMessage ?? `Starting ${id} login inside this sandbox. Follow the prompts in this terminal.`);
     // Inherit the terminal directly. Do not capture codes/credentials in manager

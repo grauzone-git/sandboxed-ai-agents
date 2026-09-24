@@ -52,7 +52,7 @@ function createServices(context) {
     const timeout = info.readyTimeout ?? 30;
     const deadline = Date.now() + timeout * 1000;
     while (Date.now() < deadline) {
-      if (!serviceAlive(id)) fail(`${id} server exited. Inspect its private log with sandbox service NAME ${id} logs.`);
+      if (!serviceAlive(id)) fail(`${id} server exited. Inspect its private log with sandbox NAME service ${id} logs.`);
       if (await serviceReady(id)) {
         console.log(`${id} server ready on container loopback:${info.port} (use SSH forwarding).`);
         return;

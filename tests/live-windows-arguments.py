@@ -43,7 +43,7 @@ $ErrorActionPreference = 'Stop'
 $probeArgs = @(Get-Content -Raw -LiteralPath $env:SANDBOX_ARGUMENT_FIXTURE | ConvertFrom-Json)
 foreach ($action in @('run', 'tool')) {
     $id = if ($action -eq 'run') { 'copilot' } else { 't3' }
-    & (Join-Path $env:SANDBOX_TEST_PROJECT 'sandbox.ps1') $action $env:SANDBOX_TEST_NAME $id @probeArgs
+    & (Join-Path $env:SANDBOX_TEST_PROJECT 'sandbox.ps1') $env:SANDBOX_TEST_NAME $action $id @probeArgs
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 '''

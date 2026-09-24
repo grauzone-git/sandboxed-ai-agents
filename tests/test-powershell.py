@@ -25,7 +25,7 @@ class PowerShellTests(unittest.TestCase):
             for code in (0, 37):
                 with self.subTest(code=code):
                     result = subprocess.run(
-                        ['pwsh', '-NoProfile', '-File', str(root / 'sandbox.ps1'), 'agents', 'test', str(code)],
+                        ['pwsh', '-NoProfile', '-File', str(root / 'sandbox.ps1'), 'test', 'agents', str(code)],
                         env={**os.environ, 'SANDBOX_PYTHON': sys.executable, 'NO_COLOR': '1'},
                         capture_output=True, text=True, timeout=30)
                     self.assertEqual(result.returncode, code, result.stderr)
@@ -59,7 +59,7 @@ class PowerShellTests(unittest.TestCase):
                 'import sys\nprint("copilot no 1.0.86")\nprint("diagnostic", file=sys.stderr)\nsys.exit(37)\n')
             script = root / 'invoke.ps1'
             script.write_text(
-                "$lines = @(& (Join-Path $PSScriptRoot 'sandbox.ps1') agents test list 2>&1)\n"
+                "$lines = @(& (Join-Path $PSScriptRoot 'sandbox.ps1') test agents list 2>&1)\n"
                 "$code = $LASTEXITCODE\n"
                 "@{ lines = @($lines | ForEach-Object { $_.ToString() }); code = $code } | ConvertTo-Json -Compress\n")
             result = subprocess.run(['pwsh', '-NoProfile', '-File', str(script)],

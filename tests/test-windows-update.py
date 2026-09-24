@@ -79,7 +79,7 @@ class WindowsUpdateTests(unittest.TestCase):
         state.mkdir(parents=True)
         (state / 'id_ed25519').write_text('retained test identity')
         self.engine.failure = lambda args: args[-1] == 'boot'
-        self.assertEqual(self.cli('update', 'agent01', '--no-build'), 1, self.output.getvalue())
+        self.assertEqual(self.cli('agent01', 'update', '--no-build'), 1, self.output.getvalue())
         self.assertEqual(self.engine.get('agent01')['Id'], old)
         self.assertTrue(self.engine.get('agent01')['State']['Running'])
         self.assertEqual(len(self.engine.containers), 1)
@@ -90,7 +90,7 @@ class WindowsUpdateTests(unittest.TestCase):
         self.engine.get('agent01')['State'] = {'Status': 'exited', 'Running': False}
         old = self.engine.get('agent01')['Id']
         self.engine.failure = lambda args: args[0] == 'exec'
-        self.assertEqual(self.cli('update', 'agent01', '--no-build'), 1, self.output.getvalue())
+        self.assertEqual(self.cli('agent01', 'update', '--no-build'), 1, self.output.getvalue())
         self.assertEqual(self.engine.get('agent01')['Id'], old)
         self.assertFalse(self.engine.get('agent01')['State']['Running'])
         self.assertIn('Restored agent01', self.output.getvalue())
@@ -98,19 +98,19 @@ class WindowsUpdateTests(unittest.TestCase):
     def test_all_targets_validated_before_build_and_foreign_volume_refused(self):
         self.engine.add('agent02')
         self.engine.volumes['agent02-home']['Labels']['io.sandboxed-agents.project'] = 'foreign'
-        self.assertEqual(self.cli('update', 'agent01', 'agent02'), 1)
+        self.assertEqual(self.cli('update', '--all'), 1)
         self.assertEqual(self.engine.mutations(), [])
 
     def test_build_failure_does_not_stop_old_container(self):
         self.engine.failure = lambda args: args[0] == 'build'
-        self.assertEqual(self.cli('update', 'agent01'), 1)
+        self.assertEqual(self.cli('agent01', 'update'), 1)
         self.assertEqual([c[0] for c in self.engine.mutations()], ['build'])
         self.assertTrue(self.engine.get('agent01')['State']['Running'])
 
     def test_nested_update_uses_guest_seccomp_and_preserves_capability(self):
         from capabilities import CAPABILITIES_LABEL
         self.engine.get('agent01')['Config']['Labels'][CAPABILITIES_LABEL] = 'podman'
-        self.assertEqual(self.cli('update', 'agent01', '--no-build'), 0, self.output.getvalue())
+        self.assertEqual(self.cli('agent01', 'update', '--no-build'), 0, self.output.getvalue())
         create = next(c for c in self.engine.calls if c[0] == 'create')
         self.assertIn('--security-opt=seccomp=/home/user/.local/share/sandboxed-agents/checkout/profile.json', create)
         self.assertIn('/run/user/1000:rw,nosuid,nodev,noexec,mode=0700', create)
@@ -119,16 +119,17 @@ class WindowsUpdateTests(unittest.TestCase):
         self.assertFalse(any('--privileged' in c for c in self.engine.calls))
 
     def test_help_invalid_options_and_duplicate_names_do_not_contact_engine(self):
-        for args, code in [(('--help',), 0), ((), 2), (('--all', 'agent01'), 2),
-                           (('agent01', 'agent01'), 2), (('agent01', '--capabilities', 'bad'), 2)]:
+        for args, code in [(('update', '--help'), 0), (('agent01', 'update', '--help'), 0), (('update',), 1),
+                           (('update', '--all', 'agent01'), 2), (('agent01', 'update', 'agent02'), 1),
+                           (('agent01', 'update', '--capabilities', 'bad'), 2)]:
             self.calls.clear()
-            self.assertEqual(self.cli('update', *args), code, self.output.getvalue())
+            self.assertEqual(self.cli(*args), code, self.output.getvalue())
             self.assertEqual(self.calls, [])
 
     def test_partial_create_failure_uses_cidfile_to_remove_only_replacement(self):
         old = self.engine.get('agent01')['Id']
         self.fail_after_create = True
-        self.assertEqual(self.cli('update', 'agent01', '--no-build'), 37, self.output.getvalue())
+        self.assertEqual(self.cli('agent01', 'update', '--no-build'), 37, self.output.getvalue())
         self.assertEqual(set(self.engine.containers), {old})
         self.assertEqual(self.engine.get('agent01')['Name'], 'agent01')
         self.assertTrue(self.engine.get('agent01')['State']['Running'])
@@ -137,7 +138,7 @@ class WindowsUpdateTests(unittest.TestCase):
     def test_backup_removal_failure_retains_healthy_replacement(self):
         old = self.engine.get('agent01')['Id']
         self.engine.failure = lambda args: args == ['rm', old]
-        self.assertEqual(self.cli('update', 'agent01', '--no-build'), 1)
+        self.assertEqual(self.cli('agent01', 'update', '--no-build'), 1)
         self.assertNotEqual(self.engine.get('agent01')['Id'], old)
         self.assertTrue(self.engine.get('agent01')['State']['Running'])
         self.assertIn('updated, but its stopped backup', self.output.getvalue())
@@ -164,13 +165,13 @@ class WindowsUpdateTests(unittest.TestCase):
         self.engine.add('agent02', workspace=workspace)
         source = workspace.as_posix()
         self.engine.get('agent02')['Mounts'][-1]['Source'] = '/mnt/' + source[0].lower() + source[2:]
-        self.assertEqual(self.cli('update', 'agent02', '--no-build'), 0, self.output.getvalue())
+        self.assertEqual(self.cli('agent02', 'update', '--no-build'), 0, self.output.getvalue())
         create = next(c for c in self.engine.calls if c[0] == 'create')
         self.assertIn(f'{workspace.resolve()}:/workspace:Z', create)
 
     def test_guest_only_workspace_is_rejected_before_mutation(self):
         self.engine.get('agent01')['Mounts'][-1] = dict(Type='bind', Source='/home/user/unsafe', Destination='/workspace')
-        self.assertEqual(self.cli('update', 'agent01'), 1)
+        self.assertEqual(self.cli('agent01', 'update'), 1)
         self.assertIn('Cannot map', self.output.getvalue())
         self.assertEqual(self.engine.mutations(), [])
 

@@ -148,7 +148,7 @@ else: sys.exit(99)
     def test_direct_interactive_points_to_host_without_starting_login(self):
         result = self.setup('--interactive')
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn(f'./sandbox tools {socket.gethostname()} setup azure --tenant tenant-1 --subscription subscription-1 --interactive', result.stderr)
+        self.assertIn(f'./sandbox {socket.gethostname()} tools setup azure --tenant tenant-1 --subscription subscription-1 --interactive', result.stderr)
         self.assertFalse((self.home / '.azure').exists())
 
     def test_replacement_keeps_user_cloud_registrations(self):

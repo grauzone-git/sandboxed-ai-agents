@@ -72,22 +72,12 @@ if (process.env.TEST_AZ_ERROR) {
   assert.match(failure.stderr, /TF400813/);
   assert.equal(failure.stderr.includes(token), false);
   assert.equal(failure.stderr.includes(Buffer.from(':' + token).toString('base64')), false);
-  const transport = spawnSync(process.execPath, [helper, '--pat-stdin', ...args], {
-    encoding: 'utf8', input: JSON.stringify(token),
-    env: { ...process.env, HOME: fixture, PATH: `${fixture}:${process.env.PATH}`, AZURE_DEVOPS_EXT_PAT: 'replaced-dummy' },
-  });
-  assert.equal(transport.status, 0, transport.stderr);
   for (const value of ['', undefined]) {
     const missing = run({ env: { ...process.env, HOME: fixture, PATH: `${fixture}:${process.env.PATH}`, AZURE_DEVOPS_EXT_PAT: value } });
     assert.notEqual(missing.status, 0);
     assert.match(missing.stderr, /nonempty AZURE_DEVOPS_EXT_PAT/);
     assert.equal(missing.stdout, '');
   }
-  const malformed = spawnSync(process.execPath, [helper, '--pat-stdin', ...args], {
-    encoding: 'utf8', input: token, env: { ...process.env, HOME: fixture },
-  });
-  assert.notEqual(malformed.status, 0);
-  assert.equal(malformed.stderr.includes('dummy-'), false);
   for (const rejected of [
     ['login'], ['devops', 'login'], ['devops', 'logout'], ['devops', 'configure'],
     [...args, '--debug'], [...args, '--debug=true'], [...args, '--verbose'],

@@ -2,7 +2,7 @@
 handle_local_ssh_config() {
     # Local SSH configuration remains usable without a running Podman service.
     if [[ $action == ssh-config ]]; then
-        [[ $# -eq 1 || ( $# -eq 2 && $2 == --install ) ]] || fail 'Usage: ./sandbox ssh-config NAME [--install]'
+        [[ $# -eq 1 || ( $# -eq 2 && $2 == --install ) ]] || fail 'Usage: ./sandbox NAME ssh-config [--install]'
         if [[ -f $SSH_CONFIG ]]; then
             if [[ ${2:-} == --install ]]; then
                 exec python3 "$ROOT/src/host/install-ssh-config.py" "$SSH_CONFIG"
@@ -10,7 +10,7 @@ handle_local_ssh_config() {
             cat "$SSH_CONFIG"
             exit
         fi
-        [[ ${2:-} == --install ]] || fail "No SSH configuration for $NAME. Run ./sandbox ssh-config $NAME --install while the sandbox is running."
+        [[ ${2:-} == --install ]] || fail "No SSH configuration for $NAME. Run ./sandbox $NAME ssh-config --install while the sandbox is running."
         # Creating missing files needs the running container's public host key.
         # Existing files above can still be displayed/included entirely offline.
     fi
@@ -68,6 +68,6 @@ EOF
     printf 'SSH configuration: %s\nWorkspace in container: /workspace\n' "$SSH_CONFIG"
 }
 connect() {
-    [[ -f $SSH_CONFIG ]] || fail "Run ./sandbox ssh-config $NAME --install to prepare SSH access."
+    [[ -f $SSH_CONFIG ]] || fail "Run ./sandbox $NAME ssh-config --install to prepare SSH access."
     ssh -F "$SSH_CONFIG" "$@"
 }
