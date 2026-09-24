@@ -49,6 +49,10 @@ RUN apt-get update \
 
 # Install from Microsoft's signed Debian repository. System-wide extensions
 # remain in the image, outside the per-sandbox /home/agent named volume.
+# Preinstall keyring without dependencies: az devops login would otherwise
+# pip-install it into the root-owned extension directory and fail, and its
+# dependencies would shadow Azure CLI's cryptography. With no Secret Service,
+# the extension falls back to its file store in the home volume.
 ARG AZURE_CLI_VERSION=latest
 ARG AZURE_DEVOPS_VERSION=latest
 RUN install -d -m 0755 /etc/apt/keyrings \
@@ -69,6 +73,9 @@ RUN install -d -m 0755 /etc/apt/keyrings \
        else \
          az extension add --name azure-devops --system --version "$AZURE_DEVOPS_VERSION" --only-show-errors; \
        fi \
+    && /opt/az/bin/python3 -m pip install --no-cache-dir --disable-pip-version-check --no-deps \
+         --target "$(az extension show --name azure-devops --query path --output tsv)" \
+         'keyring~=17.1.1' 'entrypoints==0.4' \
     && az devops --help > /dev/null \
     && az version >> /opt/agent-tools/build-versions.txt \
     && rm -rf /var/lib/apt/lists/* /root/.azure /root/.cache/pip

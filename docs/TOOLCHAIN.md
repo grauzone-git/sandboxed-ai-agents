@@ -302,9 +302,11 @@ On the host, choose how the sandbox should keep the PAT:
 Both modes ask for the default organization URL, for example
 `https://dev.azure.com/contoso`. Normal setup then runs the native
 `az devops login` PAT prompt and sets the default organization. It does not run
-`az login`. Credentials stay in the sandbox's Azure CLI credential store
-(typically `~/.azure/azuredevops/personalAccessTokens` when no keyring is
-available). A successful native setup removes a previously saved environment
+`az login`. Credentials stay in the sandbox's Azure CLI credential store. The
+image has no Secret Service, so the extension falls back to plaintext
+`~/.azure/azuredevops/personalAccessTokens` in the named home volume; setup
+keeps it at mode `0600`, but all agents sharing the sandbox user can read it.
+A successful native setup removes a previously saved environment
 PAT so new sessions use native credential storage.
 
 With `--persist`, the helper asks for a PAT with input hidden and saves it as

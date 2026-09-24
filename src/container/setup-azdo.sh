@@ -20,7 +20,13 @@ printf 'Default Azure DevOps organization URL: ' >&2
 IFS= read -r organization || { printf '\nSetup cancelled.\n' >&2; exit 1; }
 [[ $organization == https://* && $organization != *[[:space:]]* ]] || { printf 'Supply an HTTPS organization URL.\n' >&2; exit 1; }
 if [[ $# -eq 0 ]]; then
-    az devops login --organization "$organization"
+    # Without a keyring backend the extension writes the PAT in plain text
+    # using the process umask and keeps an existing file's mode.
+    pat_file=${AZURE_DEVOPS_EXT_CONFIG_DIR:-${AZURE_CONFIG_DIR:-$HOME/.azure}/azuredevops}/personalAccessTokens
+    (umask 077 && az devops login --organization "$organization")
+    if [[ -f $pat_file && ! -L $pat_file ]]; then
+        chmod 600 -- "$pat_file"
+    fi
     az devops configure --defaults "organization=$organization"
     sandbox-azdo --clear-pat
     printf 'Native Azure DevOps login completed; saved environment PAT removed.\n'
