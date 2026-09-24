@@ -631,6 +631,11 @@ class WindowsCliTests(unittest.TestCase):
             self.assertIn(hint, self.output.getvalue())
             self.assertEqual(self.calls, [])
 
+    def test_help_follows_a_sandbox_name(self):
+        self.assertEqual(self.cli('agent01', '--help'), 0)
+        self.assertIn('./sandbox.ps1 NAME agents login', self.output.getvalue())
+        self.assertEqual(self.calls, [])
+
     def test_update_takes_one_name_first_or_all(self):
         with patch('windows_update.run') as run:
             self.assertEqual(self.cli('agent01', 'update', '--no-build'), 0, self.output.getvalue())

@@ -49,7 +49,7 @@ create_sandbox() {
 
 start_sandbox() {
     owned
-    podman start "$NAME"
+    podman "$action" "$NAME"
     if [[ $setup_ssh == true ]]; then
         wait_for_ssh
         configure_ssh

@@ -33,6 +33,7 @@ if (args[0] === 'info') console.log('true');
 else if (args[0] === 'inspect') console.log(process.env.TEST_OWNER || process.env.TEST_PROJECT);
 else if (args[0] === 'exec' && (args.includes('login') || args.includes('setup'))) process.exit(Number(process.env.TEST_LOGIN_EXIT || 0));
 else if (args[0] === 'exec' && args.includes('service') && args.at(-1) === 'start') process.exit(0);
+else if (args[0] === 'restart') process.exit(0);
 else if (process.env.TEST_REMOVE && ['stop', 'rm'].includes(args[0])) process.exit(args[0] === process.env.TEST_REMOVE_FAIL ? 1 : 0);
 else if (process.env.TEST_REMOVE && args[0] === 'volume' && args[1] === 'inspect') console.log(process.env.TEST_FOREIGN_VOLUME && args.at(-1).endsWith('-sshd') ? '/foreign' : process.env.TEST_PROJECT);
 else if (process.env.TEST_REMOVE && args[0] === 'volume' && args[1] === 'exists' && args.at(-1).endsWith('-workspace')) process.exit(1);
@@ -82,14 +83,15 @@ else process.exit(1); // No image/container: stop before creation in positive pa
     [['update'], './sandbox update --all'],
     [['demo'], './sandbox NAME COMMAND'],
     [['demo', 'build'], './sandbox build'],
-    [['demo', 'list'], './sandbox list'],
+    [['demo', 'list'], 'Unknown command: list'],
+    [['demo', 'restart', '--volumes'], './sandbox NAME restart [--ssh-config]'],
     [['demo', 'update', '--all'], './sandbox update --all'],
     [['demo', 'update', 'other'], 'Update one sandbox per command: ./sandbox demo update'],
     [['demo', 'bogus'], 'Unknown command: bogus'],
     [['azdo', 'demo', '--pat-env', '--', 'devops', 'project', 'list'], './sandbox demo tools setup azdo --persist'],
     [['demo', 'azdo', '--pat-env', '--', 'devops', 'project', 'list'], './sandbox demo tools setup azdo --persist'],
     [['shell', 'up', '--agents', 'codex'], "'shell' is a command"],
-    [['list', 'up', '--agents', 'codex'], "'list' is a command"],
+    [['build', 'up', '--agents', 'codex'], "'build' is a command"],
     [['-x', 'up'], 'Use an alphanumeric container name'],
   ]) {
     const result = cli(args);
@@ -102,7 +104,13 @@ else process.exit(1); // No image/container: stop before creation in positive pa
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /\.\/sandbox NAME update .*\n.*\.\/sandbox update --all/);
   }
-  for (const args of [['--help'], ['help'], []]) {
+  const restarted = cli(['demo', 'restart']);
+  assert.equal(restarted.status, 0, restarted.stderr);
+  const restartCalls = fs.readFileSync(transportLog, 'utf8').trim().split('\n').map(JSON.parse);
+  assert.deepEqual(restartCalls.at(-1), { tool: 'podman', args: ['restart', 'demo'] });
+  assert.equal(fs.existsSync(path.join(hostHome, '.ssh/config')), false, 'Plain restart touched host SSH');
+  fs.unlinkSync(transportLog);
+  for (const args of [['--help'], ['help'], [], ['demo', '--help']]) {
     const result = cli(args);
     assert.equal(result.status, 0, JSON.stringify(args));
     assert.match(result.stdout, /\.\/sandbox NAME agents login/);

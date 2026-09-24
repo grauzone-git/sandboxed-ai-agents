@@ -211,7 +211,7 @@ used as sandbox names. A sandbox created earlier under a command name, such as
 ```text
 ./sandbox build [podman build args]
 ./sandbox NAME up [WORKSPACE [SSH_PORT]] --agents LIST [--tools LIST] [--capabilities LIST] [--ssh-config]
-./sandbox NAME start|stop|shell|check|check-full|fingerprint
+./sandbox NAME start|restart|stop|shell|check|check-full|fingerprint
 ./sandbox NAME agents list|check|set|enable|disable|update|login ...
 ./sandbox NAME tools list|check|set|enable|disable|update ...
 ./sandbox NAME tools login github             # GitHub login and Git commit identity

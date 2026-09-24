@@ -31,6 +31,9 @@ landed inside. To reuse a container you already have:
 ./sandbox agent01 start
 ```
 
+`./sandbox agent01 restart` does both in one step. Like `start`, it touches
+host SSH files only with `--ssh-config`.
+
 Stopping kills every running process, tmux sessions included. Starting brings
 back the saved agent and tool selections along with any enabled tool services.
 Files in the named volumes and the workspace survive both.
