@@ -13,7 +13,7 @@ import tempfile
 import time
 import uuid
 
-from containers import LABEL, create_args
+from containers import LABEL, create_args, owned_names
 from capabilities import CAPABILITIES_LABEL, parse_capabilities, prepare_image
 from workspace import validate_workspace
 
@@ -192,8 +192,7 @@ def main(args=None, *, project=None, image=None, runner=None,
     image_tag = image or os.environ.get('SANDBOX_IMAGE', 'localhost/agent-sandbox:dev')
     names = options.names
     if options.all_sandboxes:
-        names = runner('ps', '--all', '--filter', f'label={LABEL}={str(project) if owner_label is None else owner_label}',
-                       '--format', '{{.Names}}', capture=True).stdout.splitlines()
+        names = owned_names(str(project) if owner_label is None else owner_label, runner)
     if len(set(names)) != len(names):
         raise ValueError('Duplicate sandbox names.')
     if not names:

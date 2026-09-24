@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from containers import LABEL
+from containers import LABEL, owned_names
 
 AGENT_STATE = '/home/agent/.local/state/sandbox-agents/config.json'
 
@@ -33,27 +33,29 @@ def enabled_agents(name, runner):
 
 def describe(info, runner):
     name = info['Name'].lstrip('/')
-    state = info['State']
-    running = state.get('Running', False)
-    status = 'running' if running else 'stopped' if state.get('Status') in ('exited', 'stopped', 'created') else state.get('Status', 'unknown')
+    running = (info.get('State') or {}).get('Running') is True
     workspace = '-'
     for mount in info.get('Mounts') or []:
         if mount.get('Destination') == '/workspace':
             workspace = mount.get('Source') if mount.get('Type') == 'bind' else mount.get('Name')
     bindings = ((info.get('HostConfig') or {}).get('PortBindings') or {}).get('2222/tcp') or [{}]
-    return {'name': name, 'state': status, 'port': bindings[0].get('HostPort') or '-',
+    return {'name': name, 'state': 'running' if running else 'stopped', 'port': bindings[0].get('HostPort') or '-',
             'agents': enabled_agents(name, runner) if running else '-', 'workspace': workspace or '-'}
 
 
 def sandboxes(owner, runner=podman):
-    names = runner('ps', '--all', '--filter', f'label={LABEL}={owner}', '--format', '{{.Names}}',
-                   capture=True).stdout.split()
     rows = []
-    for name in sorted(set(names)):
-        info = json.loads(runner('container', 'inspect', name, capture=True).stdout)[0]
-        # The label filter narrows the search; ownership is still checked exactly.
-        if (info.get('Config', {}).get('Labels') or {}).get(LABEL) == owner:
-            rows.append(describe(info, runner))
+    for name in sorted(set(owned_names(owner, runner))):
+        result = runner('container', 'inspect', name, capture=True, check=False)
+        if result.returncode != 0:
+            continue  # Removed after it was listed.
+        try:
+            info = json.loads(result.stdout)[0]
+            # The label filter narrows the search; ownership is still checked exactly.
+            if (info.get('Config', {}).get('Labels') or {}).get(LABEL) == owner:
+                rows.append(describe(info, runner))
+        except (ValueError, IndexError, KeyError, TypeError, AttributeError) as error:
+            raise ValueError(f'Podman returned unexpected details for {name}.') from error
     return rows
 
 
@@ -67,10 +69,17 @@ def render(rows):
                      for row in [header, *rows])
 
 
-if __name__ == '__main__':
-    if len(sys.argv) != 2:
-        sys.exit('Usage: sandboxes.py PROJECT')
+def main(args):
+    if len(args) != 1:
+        raise ValueError('Usage: sandboxes.py PROJECT')
     try:
-        print(render(sandboxes(str(Path(sys.argv[1])))))
-    except (OSError, ValueError, KeyError, TypeError, IndexError, subprocess.CalledProcessError) as error:
+        print(render(sandboxes(str(Path(args[0])))))
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError('Podman could not list sandboxes.') from error
+
+
+if __name__ == '__main__':
+    try:
+        main(sys.argv[1:])
+    except (OSError, RuntimeError, ValueError) as error:
         sys.exit(f'Error: {error}')

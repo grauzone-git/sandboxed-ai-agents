@@ -21,11 +21,13 @@ if args[:1] == ['info']:
 elif args[:1] == ['ps']:
     wanted = args[args.index('--filter') + 1].removeprefix('label=')
     for item in containers:
-        labels = item['Config']['Labels']
-        if '{}={}'.format(*next(iter(labels.items()))) == wanted:
+        if any(f'{key}={value}' == wanted for key, value in (item['Config']['Labels'] or {}).items()):
             print(item['Name'])
 elif args[:2] == ['container', 'inspect']:
-    print(json.dumps([item for item in containers if item['Name'] == args[-1]]))
+    found = [item for item in containers if item['Name'] == args[-1] and not item.get('vanished')]
+    if not found:
+        sys.exit(125)
+    print(json.dumps(found))
 elif args[:1] == ['exec']:
     item = next(item for item in containers if item['Name'] in args)
     if 'agents' not in item:
@@ -84,6 +86,7 @@ class ListTests(unittest.TestCase):
             container('agent02', owner, running=False, port=2223, workspace='/work/agent02'),
             container('agent01', owner, agents={'codex': 'latest', 'claude': 'latest'}),
             container('foreign', '/another/checkout', agents={'codex': 'latest'}),
+            {**container('unlabelled', owner), 'Config': {'Labels': None}},
         ])
         self.assertEqual(result.returncode, 0, result.stderr)
         lines = result.stdout.splitlines()
@@ -93,6 +96,15 @@ class ListTests(unittest.TestCase):
             ['agent02', 'stopped', '2223', '-', '/work/agent02'],
         ])
         self.assertNotIn('foreign', result.stdout)
+        self.assertNotIn('unlabelled', result.stdout)
+
+    def test_sandbox_removed_while_listing_is_skipped(self):
+        owner = str(self.checkout)
+        result = self.cli('list', containers=[container('agent01', owner, agents={}),
+                                              {**container('agent02', owner), 'vanished': True}])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([line.split() for line in result.stdout.splitlines()[1:]],
+                         [['agent01', 'running', '2222', 'none', 'agent01-workspace']])
 
     def test_stopped_sandboxes_are_not_started_or_modified(self):
         self.cli('list', containers=[container('agent02', str(self.checkout), running=False)])
