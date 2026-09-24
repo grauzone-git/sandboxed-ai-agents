@@ -5,6 +5,8 @@ const os = require('node:os');
 const path = require('node:path');
 const catalog = require('../src/container/agents.json');
 const { createManager } = require('../src/container/agent-manager.cjs');
+// A caller PAT overrides saved settings and would leak a real token into failures.
+delete process.env.AZURE_DEVOPS_EXT_PAT;
 const { selection, initialSelection } = createManager();
 const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-command-test-'));
 function write(file, value, mode = 0o600) {

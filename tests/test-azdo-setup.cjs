@@ -15,6 +15,7 @@ delete env.AZURE_DEVOPS_EXT_PAT;
 const setup = (args, input, extra = {}) => spawnSync('bash', [path.join(source, 'setup-azdo.sh'), ...args], {
   env: { ...env, ...extra }, input, encoding: 'utf8',
 });
+const patFile = path.join(fixture, '.azure/azuredevops/personalAccessTokens');
 const calls = () => fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse) : [];
 try {
   fs.writeFileSync(path.join(fixture, 'sandbox-azdo'), `#!/usr/bin/env node\nrequire(${JSON.stringify(path.join(source, 'azdo.cjs'))});\n`, { mode: 0o755 });
@@ -24,6 +25,12 @@ const args = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');
 if (args[0] !== 'devops' || !['login', 'configure'].includes(args[1])) process.exit(99);
 if (process.env.TEST_FAIL === args[1]) process.exit(23);
+if (args[1] === 'login') {
+  // Mimic the extension's keyring-less fallback: plain open(), existing mode kept.
+  fs.mkdirSync(${JSON.stringify(path.dirname(patFile))}, { recursive: true });
+  fs.writeFileSync(${JSON.stringify(patFile)}, 'dummy', { mode: 0o666 });
+  fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(['umask', process.umask().toString(8)]) + '\\n');
+}
 `, { mode: 0o755 });
   const saved = setup(['--persist'], `${organization}\n${pat}\n`);
   assert.equal(saved.status, 0, saved.stderr);
@@ -44,12 +51,17 @@ if (process.env.TEST_FAIL === args[1]) process.exit(23);
   assert.equal(fs.existsSync(settings), true, 'Failed login removed saved environment');
 
   fs.unlinkSync(log);
+  // A file left by an earlier login keeps its mode when the extension rewrites it.
+  fs.mkdirSync(path.dirname(patFile), { recursive: true });
+  fs.writeFileSync(patFile, 'earlier', { mode: 0o644 });
   const native = setup([], `${organization}\n`);
   assert.equal(native.status, 0, native.stderr);
   assert.deepEqual(calls(), [
     ['devops', 'login', '--organization', organization],
+    ['umask', '77'],
     ['devops', 'configure', '--defaults', `organization=${organization}`],
   ]);
+  assert.equal(fs.statSync(patFile).mode & 0o777, 0o600, 'Native PAT file must be private');
   assert.equal(fs.existsSync(settings), false);
   assert.equal(setup(['--clear'], '').status, 0);
   fs.rmSync(path.dirname(settings), { recursive: true, force: true });
@@ -61,7 +73,11 @@ if (process.env.TEST_FAIL === args[1]) process.exit(23);
   } finally {
     fs.rmSync(outsideHome, { recursive: true, force: true });
   }
-  console.log('Azure DevOps setup: native login, opt-in environment persistence, replacement and cleanup: OK');
+  // az devops login pip-installs keyring into the root-owned system extension
+  // directory unless the image already provides it there.
+  const recipe = fs.readFileSync(path.join(source, 'Containerfile'), 'utf8').replace(/\\\n/g, ' ');
+  assert.match(recipe, /pip install [^&]*--no-deps[^&]*--target "\$\(az extension show --name azure-devops --query path --output tsv\)"[^&]*'keyring~=17\.1\.1'/);
+  console.log('Azure DevOps setup: native login with private file store, image keyring, opt-in environment persistence, replacement and cleanup: OK');
 } finally {
   fs.rmSync(fixture, { recursive: true, force: true });
 }
