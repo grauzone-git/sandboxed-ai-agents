@@ -149,7 +149,7 @@ def main(args, session=None):
     options = parse(args)
     if options.interactive and not session.hosted:
         # The container hostname is the sandbox name.
-        command = f'tools {socket.gethostname()} setup azure {shlex.join(args)}'
+        command = f'{socket.gethostname()} tools setup azure {shlex.join(args)}'
         raise ValueError(f'Run on the host: ./sandbox {command} (native Windows: ./sandbox.ps1 {command}).')
     if not options.tenant:
         options.tenant = session.prompt('tenant')

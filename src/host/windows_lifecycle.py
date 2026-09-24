@@ -12,7 +12,7 @@ COMMANDS = ('start', 'stop', 'restart', 'remove', 'shell', 'check', 'check-full'
 def parse(action, args, validate_name):
     flag = '--ssh-config' if action in ('start', 'restart') else '--volumes' if action == 'remove' else None
     if not args or len(args) > 2 or (len(args) == 2 and (flag is None or args[1] != flag)):
-        raise ValueError(f'Use {action} NAME' + (f' [{flag}]' if flag else '') + '.')
+        raise ValueError(f'Use NAME {action}' + (f' [{flag}]' if flag else '') + '.')
     return validate_name(args[0]), len(args) == 2
 
 
@@ -58,7 +58,7 @@ def execute(runtime, project, action, name, option, wait_ready):
         ssh = SshSetup(runtime, project, name)
         known = ssh.state / 'known_hosts'
         if not known.is_file():
-            raise ValueError(f'No pinned host key; run ./sandbox.ps1 ssh-config {name} --install first.')
+            raise ValueError(f'No pinned host key; run ./sandbox.ps1 {name} ssh-config --install first.')
         native([ssh.keygen, '-lf', known], runner=runtime.runner, capture=False)
         return
     if action in ('check', 'check-full'):

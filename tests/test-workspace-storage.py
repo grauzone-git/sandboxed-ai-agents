@@ -78,7 +78,7 @@ else: sys.exit('Unexpected call: ' + repr(args))
     def test_powershell_entry_point_is_protected_before_provisioning(self):
         entry = self.checkout / 'sandbox.ps1'
         entry.write_text('# PowerShell host entry point')
-        self.cli('up', 'demo', str(entry), '--agents', 'codex', success=False)
+        self.cli('demo', 'up', str(entry), '--agents', 'codex', success=False)
         self.assertEqual(json.loads(self.state.read_text()), {})
         self.assertFalse(any(call[0] == 'run' for call in self.calls()))
 
@@ -88,12 +88,17 @@ else: sys.exit('Unexpected call: ' + repr(args))
         for name in ('live-azure-auth.py', 'azure-auth-probe.py'):
             entry = tests / name
             entry.write_text('# Host-run Azure validation')
-            self.cli('up', 'demo', str(entry), '--agents', 'codex', success=False)
+            self.cli('demo', 'up', str(entry), '--agents', 'codex', success=False)
         self.assertEqual(json.loads(self.state.read_text()), {})
         self.assertFalse(any(call[0] == 'run' for call in self.calls()))
 
-    def test_omitted_workspace_and_name_use_only_named_volumes(self):
-        self.cli("up", "--agents", "codex")
+    def test_up_requires_a_sandbox_name(self):
+        result = self.cli("up", "--agents", "codex", success=False)
+        self.assertIn("./sandbox NAME up --agents codex", result.stderr)
+        self.assertEqual(self.calls(), [])
+
+    def test_omitted_workspace_uses_only_named_volumes(self):
+        self.cli("agent01", "up", "--agents", "codex")
         run = next(call for call in self.calls() if call[0] == "run")
         mounts = [run[i + 1] for i, arg in enumerate(run) if arg == "--volume"]
         self.assertEqual(mounts, ["agent01-workspace:/workspace", "agent01-home:/home/agent",
@@ -112,7 +117,7 @@ else: sys.exit('Unexpected call: ' + repr(args))
         for port_args in [("2231",), ("--ssh-port", "2231")]:
             with self.subTest(port_args=port_args):
                 self.log.unlink(missing_ok=True)
-                self.cli("up", "demo", str(directory), *port_args, "--agents", "codex")
+                self.cli("demo", "up", str(directory), *port_args, "--agents", "codex")
                 run = next(call for call in self.calls() if call[0] == "run")
                 self.assertIn(f"{directory}:/workspace:Z", run)
                 self.assertIn("127.0.0.1:2231:2222", run)
@@ -124,7 +129,7 @@ else: sys.exit('Unexpected call: ' + repr(args))
         for flags in [(), ('--capabilities', 'none'), ('--capabilities', 'podman')]:
             with self.subTest(flags=flags):
                 self.log.unlink(missing_ok=True)
-                self.cli('up', 'demo', '--agents', 'codex', *flags)
+                self.cli('demo', 'up', '--agents', 'codex', *flags)
                 calls = self.calls()
                 run = next(call for call in calls if call[0] == 'run')
                 enabled = 'podman' in flags
@@ -151,33 +156,33 @@ else: sys.exit('Unexpected call: ' + repr(args))
     def test_invalid_capabilities_fail_before_podman(self):
         for flags in ['', 'docker', 'podman,none', 'podman,podman', 'podman,', 'all']:
             with self.subTest(flags=flags):
-                self.cli('up', 'demo', '--agents', 'codex', '--capabilities', flags, success=False)
+                self.cli('demo', 'up', '--agents', 'codex', '--capabilities', flags, success=False)
                 self.assertEqual(self.calls(), [])
         for flags in [('--capabilities',), ('--capabilities', 'none', '--capabilities', 'podman')]:
-            self.cli('up', 'demo', '--agents', 'codex', *flags, success=False)
+            self.cli('demo', 'up', '--agents', 'codex', *flags, success=False)
             self.assertEqual(self.calls(), [])
 
     def test_capability_build_failure_leaves_volumes_unmodified(self):
-        self.cli('up', 'demo', '--agents', 'codex', '--capabilities', 'podman',
+        self.cli('demo', 'up', '--agents', 'codex', '--capabilities', 'podman',
                  success=False, env={'TEST_BUILD_FAIL': '1'})
         self.assertEqual(json.loads(self.state.read_text()), {})
         self.assertFalse(any(call[0] == 'run' for call in self.calls()))
 
     def test_named_volume_reused_after_removal_then_deleted_on_request(self):
-        self.cli("up", "demo", "--ssh-port", "2232", "--agents", "codex")
+        self.cli("demo", "up", "--ssh-port", "2232", "--agents", "codex")
         run = next(call for call in self.calls() if call[0] == "run")
         self.assertIn("127.0.0.1:2232:2222", run)
-        self.cli("remove", "demo")
+        self.cli("demo", "remove")
         self.assertEqual(len(json.loads(self.state.read_text())), 3)
         self.log.unlink()
-        self.cli("up", "demo", "--agents", "codex")
+        self.cli("demo", "up", "--agents", "codex")
         self.assertFalse(any(call[:2] == ["volume", "create"] for call in self.calls()))
-        self.cli("remove", "demo", "--volumes")
+        self.cli("demo", "remove", "--volumes")
         self.assertEqual(json.loads(self.state.read_text()), {})
 
     def test_foreign_workspace_volume_rejected_before_mutation(self):
         self.state.write_text(json.dumps({"demo-workspace": "/another-controller"}))
-        for args in [("up", "demo", "--agents", "codex"), ("remove", "demo", "--volumes")]:
+        for args in [("demo", "up", "--agents", "codex"), ("demo", "remove", "--volumes")]:
             with self.subTest(args=args):
                 self.log.unlink(missing_ok=True)
                 result = self.cli(*args, success=False)
@@ -194,11 +199,11 @@ else: sys.exit('Unexpected call: ' + repr(args))
                    ("./project", "2222", "--ssh-port", "2223"), ("",)]
         for option in options:
             with self.subTest(option=option):
-                self.cli("up", "demo", "--agents", "codex", *option, success=False)
+                self.cli("demo", "up", "--agents", "codex", *option, success=False)
         self.assertEqual(self.calls(), [])
 
     def test_failed_workspace_initialization_does_not_install_agents(self):
-        self.cli("up", "demo", "--agents", "codex", success=False, env={"TEST_CHOWN_FAIL": "1"})
+        self.cli("demo", "up", "--agents", "codex", success=False, env={"TEST_CHOWN_FAIL": "1"})
         self.assertFalse(any("init" in call for call in self.calls()))
 
     def test_azdo_host_script_cannot_be_exposed_as_workspace(self):
@@ -208,7 +213,7 @@ else: sys.exit('Unexpected call: ' + repr(args))
         for workspace in (script, link):
             with self.subTest(workspace=workspace):
                 self.log.unlink(missing_ok=True)
-                result = self.cli("up", "demo", str(workspace), "--agents", "codex", success=False)
+                result = self.cli("demo", "up", str(workspace), "--agents", "codex", success=False)
                 self.assertIn("host SSH/controller files", result.stderr)
                 self.assertFalse(any(call[0] == "run" or call[:2] == ["volume", "create"]
                                      for call in self.calls()))
@@ -220,7 +225,7 @@ else: sys.exit('Unexpected call: ' + repr(args))
         for workspace in (script, link):
             with self.subTest(workspace=workspace):
                 self.log.unlink(missing_ok=True)
-                result = self.cli('up', 'demo', str(workspace), '--agents', 'codex', success=False)
+                result = self.cli('demo', 'up', str(workspace), '--agents', 'codex', success=False)
                 self.assertIn('host SSH/controller files', result.stderr)
                 self.assertFalse(any(call[0] == 'run' or call[:2] == ['volume', 'create']
                                      for call in self.calls()))

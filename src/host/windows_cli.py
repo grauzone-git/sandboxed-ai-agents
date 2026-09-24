@@ -18,31 +18,37 @@ from windows_ssh import SshSetup
 import windows_lifecycle
 import windows_commands
 import windows_update
+import grammar
 import update
 
 PROJECT = Path(__file__).resolve().parents[2]
-HELP = '''Usage:
-  ./sandbox.ps1 build [additional podman build arguments]
-  ./sandbox.ps1 up NAME [WORKSPACE] --agents LIST [--tools LIST] [--ssh-port PORT]
-                   [--capabilities podman|none] [--ssh-config] [--cpus N] [--memory SIZE]
-  ./sandbox.ps1 agents|tools NAME [list|check]
-  ./sandbox.ps1 agents|tools NAME set|enable|disable|update LIST
-  ./sandbox.ps1 agents NAME login codex|claude|opencode|copilot|hermes
-  ./sandbox.ps1 tools NAME login github
-  ./sandbox.ps1 tools NAME setup t3
-  ./sandbox.ps1 tools NAME setup azure [--interactive] [--cloud AzureCloud|AzureChinaCloud]
-      [--tenant TENANT] [--subscription SUBSCRIPTION | --tenant-only]
-  ./sandbox.ps1 run NAME AGENT [arguments...]
-  ./sandbox.ps1 tool NAME TOOL [arguments...]
-  ./sandbox.ps1 copilot|claude|codex|hermes|opencode|t3|deepseek NAME
-  ./sandbox.ps1 service NAME t3|hermes-dashboard|deepseek-ui|tokentracker [status|start|stop|restart|logs]
-  ./sandbox.ps1 forward NAME t3|hermes-dashboard|deepseek-ui|tokentracker [LOCAL_PORT]
-  ./sandbox.ps1 ssh-config NAME --install
-  ./sandbox.ps1 start|restart NAME [--ssh-config]
-  ./sandbox.ps1 stop|shell|check|check-full|fingerprint NAME
-  ./sandbox.ps1 remove NAME [--volumes]
-  ./sandbox.ps1 update NAME...|--all [--no-build] [--capabilities podman|none]
+HELP = '''Usage: ./sandbox.ps1 NAME COMMAND [SUBCOMMAND] [PARAMETERS]
+Only build and update --all run without a sandbox NAME.
 
+  ./sandbox.ps1 build [additional podman build arguments]
+  ./sandbox.ps1 update --all [--no-build] [--capabilities podman|none]
+  ./sandbox.ps1 NAME update [--no-build] [--capabilities podman|none]
+  ./sandbox.ps1 NAME up [WORKSPACE] --agents LIST [--tools LIST] [--ssh-port PORT]
+                   [--capabilities podman|none] [--ssh-config] [--cpus N] [--memory SIZE]
+  ./sandbox.ps1 NAME agents|tools [list|check]
+  ./sandbox.ps1 NAME agents|tools set|enable|disable|update LIST
+  ./sandbox.ps1 NAME agents login codex|claude|opencode|copilot|hermes
+  ./sandbox.ps1 NAME tools login github
+  ./sandbox.ps1 NAME tools setup t3
+  ./sandbox.ps1 NAME tools setup azdo [--persist|--clear]
+  ./sandbox.ps1 NAME tools setup azure [--interactive] [--cloud AzureCloud|AzureChinaCloud]
+      [--tenant TENANT] [--subscription SUBSCRIPTION | --tenant-only]
+  ./sandbox.ps1 NAME run AGENT [arguments...]
+  ./sandbox.ps1 NAME tool TOOL [arguments...]
+  ./sandbox.ps1 NAME copilot|claude|codex|hermes|opencode|t3|deepseek
+  ./sandbox.ps1 NAME service t3|hermes-dashboard|deepseek-ui|tokentracker [status|start|stop|restart|logs]
+  ./sandbox.ps1 NAME forward t3|hermes-dashboard|deepseek-ui|tokentracker [LOCAL_PORT]
+  ./sandbox.ps1 NAME ssh-config --install
+  ./sandbox.ps1 NAME start|restart [--ssh-config]
+  ./sandbox.ps1 NAME stop|shell|check|check-full|fingerprint
+  ./sandbox.ps1 NAME remove [--volumes]
+
+Command names cannot be used as sandbox names.
 Requires Windows 11 x64, PowerShell 7, Python 3.9+, and rootless WSL2 Podman 6.0+.
 Set SANDBOX_IMAGE, SANDBOX_CPUS, SANDBOX_MEMORY, or SANDBOX_PYTHON as needed.
 Quote comma-separated selections in PowerShell: --agents 'codex,claude'.
@@ -87,7 +93,7 @@ def parse_up(args):
             positional.append(option)
         index += 1
     if not 1 <= len(positional) <= 3:
-        raise ValueError('Use up NAME [WORKSPACE [SSH_PORT]] --agents LIST.')
+        raise ValueError('Use NAME up [WORKSPACE [SSH_PORT]] --agents LIST.')
     name = validate_name(positional[0])
     if len(positional) == 3 and '--ssh-port' in values:
         raise ValueError('Use either positional SSH_PORT or --ssh-port, not both.')
@@ -192,7 +198,7 @@ def create(runtime, options, image, project):
     except (NativeError, ValueError):
         if ssh is not None:
             print('Host SSH setup has not run for this creation attempt. Once the container is running, use:\n'
-                  f'  ./sandbox.ps1 ssh-config {name} --install\n'
+                  f'  ./sandbox.ps1 {name} ssh-config --install\n'
                   f'Then connect with ssh {name} (root login is disabled).', file=sys.stderr)
         raise
     if ssh is not None:
@@ -208,19 +214,20 @@ def create(runtime, options, image, project):
 
 def main(args, *, runner=subprocess.run):
     try:
-        if not args or args[0] in ('help', '--help', '-h'):
+        args = grammar.normalize(args, './sandbox.ps1')
+        if args[0] == 'help':
             print(HELP)
             return 0
         if args[0] not in ('build', 'up', 'ssh-config', 'update', *windows_lifecycle.COMMANDS, *windows_commands.COMMANDS):
             raise ValueError('Unknown command. Run ./sandbox.ps1 --help.')
-        update_options = update.parse_args(args[1:], prog='./sandbox.ps1 update') if args[0] == 'update' else None
+        update_options = update.parse_args(args[1:], prog='./sandbox.ps1') if args[0] == 'update' else None
         if update_options is not None:
             for name in update_options.names:
                 validate_name(name)
         options = parse_up(args[1:]) if args[0] == 'up' else None
         if args[0] == 'ssh-config':
             if len(args) != 3 or args[2] != '--install':
-                raise ValueError('Use ssh-config NAME --install.')
+                raise ValueError('Use NAME ssh-config --install.')
             validate_name(args[1])
         command = windows_commands.parse(args[0], args[1:], PROJECT, validate_name, selections) if args[0] in windows_commands.COMMANDS else None
         lifecycle = windows_lifecycle.parse(args[0], args[1:], validate_name) if args[0] in windows_lifecycle.COMMANDS else None

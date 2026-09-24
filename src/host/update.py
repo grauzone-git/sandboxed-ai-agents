@@ -164,8 +164,11 @@ def replace(old, project, home, image, capabilities=None, *, runner=None,
     print(f'Updated {name}; {"running" if old["running"] else "stopped"}.', flush=True)
 
 
-def parse_args(args=None, *, prog="./sandbox update"):
-    parser = argparse.ArgumentParser(prog=prog, description=__doc__)
+def parse_args(args=None, *, prog="./sandbox"):
+    # Launchers pass NAME after the command internally; show the public grammar.
+    usage = (f'{prog} NAME update [--no-build] [--capabilities LIST]\n'
+             f'       {prog} update --all [--no-build] [--capabilities LIST]')
+    parser = argparse.ArgumentParser(prog=f'{prog} update', usage=usage, description=__doc__)
     parser.add_argument('--all', action='store_true', dest='all_sandboxes',
                         help='update every sandbox owned by this controller checkout')
     parser.add_argument('--no-build', action='store_true',
@@ -175,7 +178,7 @@ def parse_args(args=None, *, prog="./sandbox update"):
     parser.add_argument('names', nargs='*', metavar='NAME', help='sandbox names to update')
     options = parser.parse_args(args)
     if options.all_sandboxes == bool(options.names):
-        parser.error('Supply one or more sandbox names, or --all.')
+        parser.error('Supply one sandbox name, or --all.')
     if len(set(options.names)) != len(options.names):
         parser.error('Duplicate sandbox names.')
     return options

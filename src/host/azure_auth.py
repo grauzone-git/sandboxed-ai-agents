@@ -151,7 +151,7 @@ def interactive(name, config, arguments, *, popen=subprocess.Popen, browser=laun
     launcher = './sandbox.ps1' if os.name == 'nt' else './sandbox'
     config = Path(config)
     if not all(path.is_file() for path in (config, config.parent / 'known_hosts', config.parent / 'id_ed25519')):
-        raise ValueError(f'Configure SSH first: {launcher} ssh-config {name} --install')
+        raise ValueError(f'Configure SSH first: {launcher} {name} ssh-config --install')
     common = [ssh, '-F', str(config), '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
               '-o', 'ForwardAgent=no', '-o', 'ForwardX11=no', '-o', 'IdentityAgent=none',
               '-o', 'ControlMaster=no', '-o', 'ControlPath=none', '-o', 'ConnectTimeout=10']
@@ -284,7 +284,7 @@ def main(args):
         parse(args[1:])
         return 0
     if len(args) < 2 or not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_.-]*', args[0]):
-        raise ValueError('Use tools NAME setup azure [--interactive] [OPTIONS].')
+        raise ValueError('Use NAME tools setup azure [--interactive] [OPTIONS].')
     name = args[0]
     interactive(name, Path.home() / '.ssh/sanboxed-agents' / name / f'{name}.conf', args[1:])
     return 0

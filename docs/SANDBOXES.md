@@ -15,7 +15,7 @@ section says otherwise.
 Once you have [built the image](TOOLCHAIN.md#image-options), create a sandbox:
 
 ```bash
-./sandbox up agent01 --agents codex --ssh-config
+./sandbox agent01 up --agents codex --ssh-config
 ```
 
 `up` only ever creates a new container, and it refuses to touch an existing one.
@@ -27,8 +27,8 @@ It also insists on a nonempty `--agents` selection, so you always know what
 landed inside. To reuse a container you already have:
 
 ```bash
-./sandbox stop agent01
-./sandbox start agent01
+./sandbox agent01 stop
+./sandbox agent01 start
 ```
 
 Stopping kills every running process, tmux sessions included. Starting brings
@@ -41,12 +41,12 @@ Leave the workspace directory out and the launcher creates or reuses the named
 volume `agent01-workspace` at `/workspace`. Nothing appears in a local
 `workspaces/agent01` folder, and no host directory is bound into the container
 at all. Open `/workspace` through VS Code Remote SSH, or clone a project into it
-from `./sandbox shell agent01`.
+from `./sandbox agent01 shell`.
 
 To bind a local project instead, name its directory when you create the sandbox:
 
 ```bash
-./sandbox up agent01 ./workspaces/agent01 2222 --agents codex --ssh-config
+./sandbox agent01 up ./workspaces/agent01 2222 --agents codex --ssh-config
 ```
 
 This replaces the named-volume command above rather than following it. Both
@@ -56,7 +56,7 @@ empty string is rejected: leave the argument out entirely to get a volume.
 For a custom SSH port without a directory, use `--ssh-port`:
 
 ```bash
-./sandbox up agent02 --ssh-port 2223 --agents claude --ssh-config
+./sandbox agent02 up --ssh-port 2223 --agents claude --ssh-config
 ```
 
 `--ssh-port` works with a directory too, but pick either that flag or the
@@ -72,9 +72,9 @@ the connection files and install the Include; plain `up` and `start` leave your
 local SSH files alone. To add SSH to a sandbox that is already running:
 
 ```bash
-./sandbox ssh-config agent01 --install
-./sandbox ssh-config agent01
-./sandbox shell agent01
+./sandbox agent01 ssh-config --install
+./sandbox agent01 ssh-config
+./sandbox agent01 shell
 ```
 
 The second command prints the generated configuration. Each sandbox keeps its
@@ -104,7 +104,7 @@ running, but generating missing files needs a running sandbox. To refresh keys
 and config, including for a container that is already up:
 
 ```bash
-./sandbox start agent01 --ssh-config
+./sandbox agent01 start --ssh-config
 ```
 
 ## VS Code
@@ -122,8 +122,8 @@ instead. [VS Code Remote SSH documentation](https://code.visualstudio.com/docs/r
 When the remote window refuses to open, test the connection on its own first:
 
 ```bash
-./sandbox start agent01 --ssh-config
-./sandbox shell agent01
+./sandbox agent01 start --ssh-config
+./sandbox agent01 shell
 ssh -v agent01
 ```
 
@@ -136,8 +136,8 @@ installation that finished is not proof that the editor connected.
 For a managed tool, enable it and use the forwarding helper:
 
 ```bash
-./sandbox tools agent01 enable tokentracker
-./sandbox forward agent01 tokentracker
+./sandbox agent01 tools enable tokentracker
+./sandbox agent01 forward tokentracker
 ```
 
 Open <http://127.0.0.1:7680> and keep that terminal open. The helper starts the
@@ -149,8 +149,8 @@ Running the same tool in two sandboxes means picking a different local port for
 the second one, after you have [created it](../README.md#add-agents-and-tools):
 
 ```bash
-./sandbox tools agent02 enable tokentracker
-./sandbox forward agent02 tokentracker 7681
+./sandbox agent02 tools enable tokentracker
+./sandbox agent02 forward tokentracker 7681
 ```
 
 For your own application on container port `3000`, plain SSH is enough:
@@ -161,8 +161,8 @@ ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:3000:127.0.0.1:3000 agent01
 
 Start the application inside the sandbox first, because a tunnel will not start
 it for you. If a managed tool reports "connection refused", check
-`./sandbox service agent01 tokentracker status` and
-`./sandbox service agent01 tokentracker logs`, then run the helper again. A
+`./sandbox agent01 service tokentracker status` and
+`./sandbox agent01 service tokentracker logs`, then run the helper again. A
 local port that is already taken needs a different `LOCAL_PORT`.
 
 ## Storage
@@ -190,11 +190,11 @@ workspace root you chose.
 Rebuild the image and recreate a sandbox in one step:
 
 ```bash
-./sandbox update agent01
+./sandbox agent01 update
 ```
 
-Update several at once with `./sandbox update agent01 agent02`, or every sandbox
-owned by this controller checkout:
+Update one sandbox per command, or every sandbox owned by this controller
+checkout:
 
 ```bash
 ./sandbox update --all
@@ -231,7 +231,7 @@ Both commands read `SANDBOX_IMAGE`, which defaults to
 `localhost/agent-sandbox:dev`. Automatic rebuilds use the Containerfile defaults
 and do not remember the build arguments you used last time. Updates restore the
 agents and tools you had installed without upgrading their packages; use
-`./sandbox agents agent01 update all` and `./sandbox tools agent01 update all`
+`./sandbox agent01 agents update all` and `./sandbox agent01 tools update all`
 for that.
 
 While a container is being replaced, the stopped original is kept under a
@@ -240,7 +240,7 @@ restoration fails, update tries to bring the old container back along with its
 previous running state, and only deletes the backup once validation succeeds. If
 the rollback or the backup cleanup itself fails, the error tells you which
 container was retained so you can recover by hand. Rollback cannot undo writes
-to shared volumes. A multi-sandbox update stops at the first failure, and
+to shared volumes. `update --all` stops at the first failure, and
 whatever already completed stays applied.
 
 ## Remove a sandbox
@@ -249,8 +249,8 @@ Two options, depending on how much you want gone:
 
 | Command | Deletes |
 |---|---|
-| `./sandbox remove agent01` | The container and the generated local SSH files and Include |
-| `./sandbox remove agent01 --volumes` | All of the above plus the named home, SSH, and workspace volumes if they exist |
+| `./sandbox agent01 remove` | The container and the generated local SSH files and Include |
+| `./sandbox agent01 remove --volumes` | All of the above plus the named home, SSH, and workspace volumes if they exist |
 
 Host workspace directories and the image are always kept, and plain removal also
 keeps every named volume. `--volumes` deletes the named workspace volume too,

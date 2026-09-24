@@ -28,9 +28,9 @@ something you run unprompted:
 
 ```bash
 ./sandbox build
-./sandbox up smoke-test --ssh-port 2299 --agents codex --ssh-config
-./sandbox check smoke-test
-./sandbox remove smoke-test --volumes
+./sandbox smoke-test up --ssh-port 2299 --agents codex --ssh-config
+./sandbox smoke-test check
+./sandbox smoke-test remove --volumes
 ```
 
 Never point a runtime test at `agent01` or any other sandbox somebody works in,

@@ -19,7 +19,7 @@ podman machine list
 podman system connection list
 podman info
 .\sandbox.ps1 build
-.\sandbox.ps1 up agent01 --agents copilot --ssh-config
+.\sandbox.ps1 agent01 up --agents copilot --ssh-config
 ```
 
 The selected connection must match a running rootless WSL2 machine. If your
@@ -30,7 +30,7 @@ The default workspace is a named volume mounted at `/workspace`. To bind a
 Windows directory instead, use this creation command in place of the one above:
 
 ```powershell
-.\sandbox.ps1 up agent01 '.\workspaces\agent01' --agents copilot --ssh-config
+.\sandbox.ps1 agent01 up '.\workspaces\agent01' --agents copilot --ssh-config
 ```
 
 Quote paths containing spaces. UNC/network shares and controller/SSH directories
@@ -40,8 +40,8 @@ and port for another sandbox, for example `agent02 --ssh-port 2223`.
 ## Sign in and work
 
 ```powershell
-.\sandbox.ps1 agents agent01 login copilot
-.\sandbox.ps1 copilot agent01
+.\sandbox.ps1 agent01 agents login copilot
+.\sandbox.ps1 agent01 copilot
 ```
 
 Detach from the persistent terminal with `Ctrl+B`, then `D`. These commands use
@@ -54,18 +54,18 @@ root login is disabled.
 
 | Task | PowerShell command |
 |---|---|
-| Stop / start | `.\sandbox.ps1 stop agent01` / `.\sandbox.ps1 start agent01` |
-| Restart | `.\sandbox.ps1 restart agent01` |
-| Shell without host SSH setup | `.\sandbox.ps1 shell agent01` |
-| Add SSH to a running sandbox | `.\sandbox.ps1 ssh-config agent01 --install` |
-| Check toolchain and mounts | `.\sandbox.ps1 check agent01` |
-| List agents / tools | `.\sandbox.ps1 agents agent01 list` / `.\sandbox.ps1 tools agent01 list` |
-| Enable T3 | `.\sandbox.ps1 tools agent01 enable t3` |
-| Check / restart T3 | `.\sandbox.ps1 service agent01 t3 status` / `.\sandbox.ps1 service agent01 t3 restart` |
-| Forward T3 to localhost | `.\sandbox.ps1 forward agent01 t3` |
-| Show pinned host-key fingerprint | `.\sandbox.ps1 fingerprint agent01` |
-| Rebuild and update | `.\sandbox.ps1 update agent01` |
-| Apply an already built image | `.\sandbox.ps1 update agent01 --no-build` |
+| Stop / start | `.\sandbox.ps1 agent01 stop` / `.\sandbox.ps1 agent01 start` |
+| Restart | `.\sandbox.ps1 agent01 restart` |
+| Shell without host SSH setup | `.\sandbox.ps1 agent01 shell` |
+| Add SSH to a running sandbox | `.\sandbox.ps1 agent01 ssh-config --install` |
+| Check toolchain and mounts | `.\sandbox.ps1 agent01 check` |
+| List agents / tools | `.\sandbox.ps1 agent01 agents list` / `.\sandbox.ps1 agent01 tools list` |
+| Enable T3 | `.\sandbox.ps1 agent01 tools enable t3` |
+| Check / restart T3 | `.\sandbox.ps1 agent01 service t3 status` / `.\sandbox.ps1 agent01 service t3 restart` |
+| Forward T3 to localhost | `.\sandbox.ps1 agent01 forward t3` |
+| Show pinned host-key fingerprint | `.\sandbox.ps1 agent01 fingerprint` |
+| Rebuild and update | `.\sandbox.ps1 agent01 update` |
+| Apply an already built image | `.\sandbox.ps1 agent01 update --no-build` |
 
 Update preserves storage, SSH setup, selections, resource/port settings, and
 running/stopped state, with rollback on replacement failure. Plain start/restart
@@ -89,14 +89,14 @@ Both `agents` and `tools` support `list` (the default), `check`, and
 `set|enable|disable|update LIST`. Quote comma-separated lists in PowerShell:
 
 ```powershell
-.\sandbox.ps1 agents agent01 enable 'codex,claude'
-.\sandbox.ps1 agents agent01 update all
-.\sandbox.ps1 tools agent01 set t3
-.\sandbox.ps1 tools agent01 setup t3
-.\sandbox.ps1 tools agent01 setup azdo
-.\sandbox.ps1 tools agent01 login github
-.\sandbox.ps1 run agent01 codex --help
-.\sandbox.ps1 tool agent01 t3 --help
+.\sandbox.ps1 agent01 agents enable 'codex,claude'
+.\sandbox.ps1 agent01 agents update all
+.\sandbox.ps1 agent01 tools set t3
+.\sandbox.ps1 agent01 tools setup t3
+.\sandbox.ps1 agent01 tools setup azdo
+.\sandbox.ps1 agent01 tools login github
+.\sandbox.ps1 agent01 run codex --help
+.\sandbox.ps1 agent01 tool t3 --help
 ```
 
 `update all` updates only enabled entries. `set none` disables the selection,
@@ -106,7 +106,7 @@ can prompt for authorization. Agent aliases and `t3` reconnect persistent
 sessions; `run`/`tool` pass additional arguments to the selected executable.
 
 Azure DevOps setup accepts `--persist` or `--clear` after `azdo`.
-Azure CLI setup uses `./sandbox.ps1 tools agent01 setup azure`; add `--interactive`
+Azure CLI setup uses `./sandbox.ps1 agent01 tools setup azure`; add `--interactive`
 for the native host browser, `--cloud AzureChinaCloud` for China, and explicit
 `--tenant` plus `--subscription` or `--tenant-only` as needed. Device code is the
 default. Browser setup requires opted-in managed SSH. See
@@ -114,7 +114,7 @@ default. Browser setup requires opted-in managed SSH. See
 See [Azure DevOps authentication](TOOLCHAIN.md#set-up-azure-devops) for the credential storage options.
 
 Non-interactive output supports PowerShell assignment and pipelines, for example
-`$listing = .\sandbox.ps1 agents agent01 list`. Native stderr is displayed as
+`$listing = .\sandbox.ps1 agent01 agents list`. Native stderr is displayed as
 plain text and remains redirectable with `2>` or `2>&1`. Installers also send
 progress there; check `$LASTEXITCODE` for command success. Shells, sessions, `run`/`tool`, and
 login/setup keep direct console input and output for interactive programs.
@@ -122,7 +122,7 @@ login/setup keep direct console input and output for interactive programs.
 Service actions are `status`, `start`, `stop`, `restart`, and `logs`. Forwarding
 starts the selected enabled service and requires existing managed SSH setup.
 Leave its terminal running and open the printed localhost URL. An optional
-port overrides the local port: `.\sandbox.ps1 forward agent01 t3 4773`.
+port overrides the local port: `.\sandbox.ps1 agent01 forward t3 4773`.
 An unavailable local port is rejected before starting the service or SSH tunnel.
 Service/forward aliases `hermes` and `deepseek` select their dashboard tools.
 These added host command routes have offline coverage; live Windows results
@@ -131,17 +131,17 @@ are tracked in [issue #16](https://github.com/grauzone-git/sandboxed-ai-agents/i
 ## Remove
 
 ```powershell
-.\sandbox.ps1 remove agent01
+.\sandbox.ps1 agent01 remove
 ```
 
 This removes the container and local managed SSH setup, retaining named volumes.
 To permanently delete those volumes, including saved credentials and named
-workspace files, use `.\sandbox.ps1 remove agent01 --volumes` instead.
+workspace files, use `.\sandbox.ps1 agent01 remove --volumes` instead.
 Host-bound workspace directories are always retained.
 
 If a command fails, inspect `$LASTEXITCODE` and `podman logs agent01`. Startup
 failure can happen before SSH setup; after recovery, run
-`.\sandbox.ps1 ssh-config agent01 --install`. Keep volumes while diagnosing.
+`.\sandbox.ps1 agent01 ssh-config --install`. Keep volumes while diagnosing.
 See `.\sandbox.ps1 --help` and the [shared lifecycle guide](SANDBOXES.md).
 
 

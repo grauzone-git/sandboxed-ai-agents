@@ -12,9 +12,9 @@ explicitly ask for it.
 
 ```bash
 ./sandbox build
-./sandbox up agent01 --agents codex --ssh-config
-./sandbox agents agent01 login codex
-./sandbox codex agent01
+./sandbox agent01 up --agents codex --ssh-config
+./sandbox agent01 agents login codex
+./sandbox agent01 codex
 ```
 
 That's a working sandbox with Codex installed, signed in, and running in a
@@ -69,7 +69,7 @@ SSH, lifecycle commands, transactional updates, and offline tests.
 
 ```powershell
 .\sandbox.ps1 build
-.\sandbox.ps1 up agent01 --agents codex --ssh-config
+.\sandbox.ps1 agent01 up --agents codex --ssh-config
 ssh agent01
 ```
 
@@ -79,10 +79,10 @@ Build the image once, then create a sandbox:
 
 ```bash
 ./sandbox build
-./sandbox up agent01 --agents codex --ssh-config
-./sandbox check agent01
-./sandbox agents agent01 login codex
-./sandbox codex agent01
+./sandbox agent01 up --agents codex --ssh-config
+./sandbox agent01 check
+./sandbox agent01 agents login codex
+./sandbox agent01 codex
 ```
 
 `login` prints a URL and a one-time code to finish in your desktop browser. The
@@ -94,7 +94,7 @@ named volume, mounted at `/workspace`. If you would rather bind a folder from
 your host, pass it when you create the sandbox:
 
 ```bash
-./sandbox up agent01 ./workspaces/agent01 --agents codex --ssh-config
+./sandbox agent01 up ./workspaces/agent01 --agents codex --ssh-config
 ```
 
 Those two `up` commands are alternatives, not steps in sequence. See
@@ -122,10 +122,10 @@ several sandboxes at once.
 Selections are editable after creation:
 
 ```bash
-./sandbox agents agent01 enable claude
-./sandbox agents agent01 login claude
-./sandbox tools agent01 enable tokentracker
-./sandbox forward agent01 tokentracker
+./sandbox agent01 agents enable claude
+./sandbox agent01 agents login claude
+./sandbox agent01 tools enable tokentracker
+./sandbox agent01 forward tokentracker
 ```
 
 Leave the forwarding terminal open and open <http://127.0.0.1:7680>.
@@ -134,15 +134,15 @@ For a second, independent workspace, create another sandbox with its own name
 and SSH port:
 
 ```bash
-./sandbox up agent02 --ssh-port 2223 --agents claude --ssh-config
+./sandbox agent02 up --ssh-port 2223 --agents claude --ssh-config
 ```
 
 To build and test containers inside a sandbox, add `--capabilities podman`:
 
 ```bash
-./sandbox up agent01 --agents codex --capabilities podman --ssh-config
+./sandbox agent01 up --agents codex --capabilities podman --ssh-config
 # For an existing sandbox instead:
-./sandbox update agent01 --no-build --capabilities podman
+./sandbox agent01 update --no-build --capabilities podman
 ```
 
 The capability automatically installs and configures rootless Podman in an
@@ -153,7 +153,7 @@ for requirements, build/run commands, storage, and port forwarding.
 ### Update
 
 ```bash
-./sandbox update agent01       # rebuild the image, recreate this sandbox
+./sandbox agent01 update       # rebuild the image, recreate this sandbox
 ./sandbox update --all         # rebuild once, update every owned sandbox
 ```
 
@@ -203,32 +203,37 @@ report a vulnerability.
 
 ## Command reference
 
+Commands take the sandbox name first: `./sandbox NAME COMMAND [SUBCOMMAND] [PARAMETERS]`.
+Only `build` and `update --all` run without a name, and command names cannot be
+used as sandbox names. A sandbox created earlier under a command name, such as
+`claude`, can no longer be addressed by the launcher; manage it with Podman.
+
 ```text
 ./sandbox build [podman build args]
-./sandbox up NAME [WORKSPACE [SSH_PORT]] --agents LIST [--tools LIST] [--capabilities LIST] [--ssh-config]
-./sandbox start|stop|shell|check|check-full|fingerprint NAME
-./sandbox agents NAME list|check|set|enable|disable|update|login ...
-./sandbox tools NAME list|check|set|enable|disable|update ...
-./sandbox tools NAME login github             # GitHub login and Git commit identity
-./sandbox azdo NAME --pat-env -- devops project list --organization URL
-./sandbox tools NAME setup t3                 # T3 Connect sign-in and activation
-./sandbox tools NAME setup azdo [--persist|--clear] # PAT and default organization
-./sandbox tools NAME setup azure [--interactive] # independent Azure session
-./sandbox run NAME AGENT [args...]          # one-off command
-./sandbox tool NAME TOOL [args...]          # one-off tool command
-./sandbox copilot|claude|codex|hermes|opencode|deepseek|t3 NAME   # persistent terminal
-./sandbox service NAME TOOL status|start|stop|restart|logs
-./sandbox forward NAME TOOL [LOCAL_PORT]
-./sandbox ssh-config NAME [--install]
-./sandbox update NAME...|--all [--no-build] [--capabilities LIST]
-./sandbox remove NAME [--volumes]
+./sandbox NAME up [WORKSPACE [SSH_PORT]] --agents LIST [--tools LIST] [--capabilities LIST] [--ssh-config]
+./sandbox NAME start|stop|shell|check|check-full|fingerprint
+./sandbox NAME agents list|check|set|enable|disable|update|login ...
+./sandbox NAME tools list|check|set|enable|disable|update ...
+./sandbox NAME tools login github             # GitHub login and Git commit identity
+./sandbox NAME tools setup t3                 # T3 Connect sign-in and activation
+./sandbox NAME tools setup azdo [--persist|--clear] # PAT and default organization
+./sandbox NAME tools setup azure [--interactive] # independent Azure session
+./sandbox NAME run AGENT [args...]          # one-off command
+./sandbox NAME tool TOOL [args...]          # one-off tool command
+./sandbox NAME copilot|claude|codex|hermes|opencode|deepseek|t3   # persistent terminal
+./sandbox NAME service TOOL status|start|stop|restart|logs
+./sandbox NAME forward TOOL [LOCAL_PORT]
+./sandbox NAME ssh-config [--install]
+./sandbox NAME update [--no-build] [--capabilities LIST]
+./sandbox update --all [--no-build] [--capabilities LIST]
+./sandbox NAME remove [--volumes]
 ```
 
 Run `./sandbox --help` for the full syntax, including environment variables such
 as `SANDBOX_IMAGE`, `SANDBOX_CPUS`, and `SANDBOX_MEMORY`.
 
-Azure DevOps PAT commands and Windows PowerShell through WSL are described in
-the [setup and PAT workflow](docs/TOOLCHAIN.md#set-up-azure-devops).
+Azure DevOps PAT setup is described in the
+[setup and PAT workflow](docs/TOOLCHAIN.md#set-up-azure-devops).
 
 ## Documentation
 

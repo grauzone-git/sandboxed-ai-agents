@@ -36,12 +36,7 @@ function main(args) {
     return 0;
   }
   const saved = readSettings();
-  let token = process.env.AZURE_DEVOPS_EXT_PAT ?? saved.pat;
-  if (args[0] === '--pat-stdin') {
-    args = args.slice(1);
-    try { token = JSON.parse(fs.readFileSync(0, 'utf8')); }
-    catch { throw new Error('Invalid PAT input; use the host azdo --pat-env command.'); }
-  }
+  const token = process.env.AZURE_DEVOPS_EXT_PAT ?? saved.pat;
   if (typeof token !== 'string' || !token || token.includes('\0')) {
     throw new Error('Set a nonempty AZURE_DEVOPS_EXT_PAT in this session, then retry.');
   }

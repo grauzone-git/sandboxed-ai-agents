@@ -4,36 +4,38 @@ usage() {
     cat <<'USAGE'
 Windows PowerShell commands: use ./sandbox.ps1; see docs/QUICKGUIDE-WINDOWS.md.
 
-Usage:
-  ./sandbox build [additional podman build arguments]
-  ./sandbox update NAME...|--all [--no-build] [--capabilities LIST]
-                                           # rebuild image and recreate sandboxes
-  ./sandbox up [NAME [WORKSPACE [SSH_PORT]]] --agents LIST [--tools LIST] [--ssh-config]
-                                           [--ssh-port PORT] [--capabilities LIST]
-                                           # defaults: agent01, NAME-workspace volume, 2222
-  ./sandbox agents NAME [list|check]
-  ./sandbox agents NAME set|enable|disable|update LIST
-  ./sandbox agents NAME login codex|claude|opencode|copilot|hermes
-  ./sandbox tools NAME [list|check]
-  ./sandbox tools NAME set|enable|disable|update LIST
-  ./sandbox tools NAME login github
-  ./sandbox tools NAME setup t3
-  ./sandbox tools NAME setup azdo [--persist|--clear]
-  ./sandbox tools NAME setup azure [--interactive] [--cloud AzureCloud|AzureChinaCloud]
-      [--tenant TENANT] [--subscription SUBSCRIPTION | --tenant-only]
-  ./sandbox tool NAME TOOL [arguments...]
-  ./sandbox run NAME AGENT [arguments...]
-  ./sandbox azdo NAME --pat-env -- devops COMMAND --organization URL [--project PROJECT]
-                                           # PAT from environment, one invocation
-  ./sandbox copilot|claude|codex|hermes|opencode|t3|deepseek NAME
-                                           # start/reconnect a persistent terminal
-  ./sandbox service NAME t3|hermes-dashboard|deepseek-ui|tokentracker [status|start|stop|restart|logs]
-  ./sandbox forward NAME t3|hermes-dashboard|deepseek-ui|tokentracker [LOCAL_PORT]
-  ./sandbox start NAME [--ssh-config]
-  ./sandbox stop|shell|check|check-full|fingerprint NAME
-  ./sandbox ssh-config NAME [--install]    # create if missing and install Include
-  ./sandbox remove NAME [--volumes]         # always delete local SSH files/Include
+Usage: ./sandbox NAME COMMAND [SUBCOMMAND] [PARAMETERS]
+Only build and update --all run without a sandbox NAME.
 
+  ./sandbox build [additional podman build arguments]
+  ./sandbox update --all [--no-build] [--capabilities LIST]
+                                           # rebuild image and recreate every sandbox
+  ./sandbox NAME update [--no-build] [--capabilities LIST]
+  ./sandbox NAME up [WORKSPACE [SSH_PORT]] --agents LIST [--tools LIST] [--ssh-config]
+                                           [--ssh-port PORT] [--capabilities LIST]
+                                           # defaults: NAME-workspace volume, port 2222
+  ./sandbox NAME agents [list|check]
+  ./sandbox NAME agents set|enable|disable|update LIST
+  ./sandbox NAME agents login codex|claude|opencode|copilot|hermes
+  ./sandbox NAME tools [list|check]
+  ./sandbox NAME tools set|enable|disable|update LIST
+  ./sandbox NAME tools login github
+  ./sandbox NAME tools setup t3
+  ./sandbox NAME tools setup azdo [--persist|--clear]
+  ./sandbox NAME tools setup azure [--interactive] [--cloud AzureCloud|AzureChinaCloud]
+      [--tenant TENANT] [--subscription SUBSCRIPTION | --tenant-only]
+  ./sandbox NAME tool TOOL [arguments...]
+  ./sandbox NAME run AGENT [arguments...]
+  ./sandbox NAME copilot|claude|codex|hermes|opencode|t3|deepseek
+                                           # start/reconnect a persistent terminal
+  ./sandbox NAME service t3|hermes-dashboard|deepseek-ui|tokentracker [status|start|stop|restart|logs]
+  ./sandbox NAME forward t3|hermes-dashboard|deepseek-ui|tokentracker [LOCAL_PORT]
+  ./sandbox NAME start [--ssh-config]
+  ./sandbox NAME stop|shell|check|check-full|fingerprint
+  ./sandbox NAME ssh-config [--install]    # create if missing and install Include
+  ./sandbox NAME remove [--volumes]         # always delete local SSH files/Include
+
+Command names cannot be used as sandbox names.
 Omit WORKSPACE to use the NAME-workspace named volume (no host-directory binds).
 Supply WORKSPACE to bind that directory at /workspace instead.
 Home and SSH server state always use NAME-home + NAME-sshd named volumes.
@@ -41,7 +43,7 @@ Use --ssh-port to choose a port without supplying a workspace directory.
 Agents: copilot, claude, codex, hermes, opencode, deepseek; LIST also accepts
 all and versions (e.g. codex@X.Y.Z). Up requires at least one explicit agent,
 including when recreating a container. Nothing defaults to Copilot.
-Existing sandboxes can use 'agents NAME set none' to disable every agent.
+Existing sandboxes can use 'NAME agents set none' to disable every agent.
 Agent login requires an enabled agent: Codex/Copilot device code, Claude browser/code login,
 or OpenCode/Hermes interactive provider setup.
 GitHub login uses the built-in gh CLI and configures Git HTTPS credentials.
@@ -51,11 +53,6 @@ through temporary loopback forwarding and requires opted-in managed SSH setup.
 With --persist, save the PAT as AZURE_DEVOPS_EXT_PAT for new sandbox sessions,
 without either login command. Both modes set the default organization.
 Setup --clear removes the saved environment PAT; restart existing sessions.
-One-off Azure DevOps commands require explicit --pat-env and a nonempty AZURE_DEVOPS_EXT_PAT.
-The PAT travels over stdin, is never saved, and is unavailable to later sessions.
-Use devops, boards, repos, pipelines or artifacts commands with --organization URL.
-PAT commands use the organization from persistent setup when no URL is supplied.
-They ignore native Azure defaults and reject login, configure, debug and verbose.
 After login, enter a Git user name and email to save globally in the sandbox home.
 T3 starts headless; its terminal command follows logs. DeepSeek opens a CLI shell.
 T3 Connect setup requires enabled T3 and restarts its managed server after sign-in.
@@ -72,14 +69,14 @@ mapping-helper file capabilities, disables SELinux/AppArmor separation, and unma
 Its seccomp profile permits hostname changes and setns in inner namespaces.
 Nested runtime state uses tmpfs; inner images and volumes persist in the home volume.
 Capabilities are chosen at creation and preserved by update unless overridden.
-Use 'update NAME --capabilities podman' to enable nested Podman on an existing sandbox.
+Use 'NAME update --capabilities podman' to enable nested Podman on an existing sandbox.
 Update builds once without cache, then recreates selected owned sandboxes.
 Use --no-build to apply an image you have already built with custom build options.
 The optional Podman layer is built/cached even with --no-build.
 Update preserves storage, SSH files, settings, and running/stopped state.
 Run as your normal user, never with sudo. Up only creates new containers.
 Up/start create local SSH files and install their Include only with --ssh-config.
-Add SSH later with 'ssh-config NAME --install' while the sandbox is running.
+Add SSH later with 'NAME ssh-config --install' while the sandbox is running.
 Remove always deletes this sandbox's local SSH files and its Include.
 Removal also deduplicates SSH settings within each scope and redundant Host blocks.
 The workspace and named volumes are preserved by default.
@@ -105,11 +102,11 @@ parse_cli_args() {
     remove_volumes=false
     setup_ssh=false
     if [[ $action == start ]]; then
-        [[ $# -eq 1 || ( $# -eq 2 && $2 == --ssh-config ) ]] || fail 'Usage: ./sandbox start NAME [--ssh-config]'
+        [[ $# -eq 1 || ( $# -eq 2 && $2 == --ssh-config ) ]] || fail 'Usage: ./sandbox NAME start [--ssh-config]'
         [[ ${2:-} != --ssh-config ]] || setup_ssh=true
     fi
     if [[ $action == remove ]]; then
-        [[ $# -ge 1 ]] || fail 'Usage: ./sandbox remove NAME [--volumes]'
+        [[ $# -ge 1 ]] || fail 'Usage: ./sandbox NAME remove [--volumes]'
         local legacy_ssh_option=false
         for option in "${@:2}"; do
             case "$option" in
@@ -151,7 +148,7 @@ parse_cli_args() {
             esac
         done
         set -- "${positional[@]}"
-        [[ $# -le 3 ]] || fail 'Usage: ./sandbox up [NAME [WORKSPACE [SSH_PORT]]] --agents LIST [--tools LIST] [--capabilities LIST] [--ssh-config] [--ssh-port PORT]'
+        [[ $# -ge 1 && $# -le 3 ]] || fail 'Usage: ./sandbox NAME up [WORKSPACE [SSH_PORT]] --agents LIST [--tools LIST] [--capabilities LIST] [--ssh-config] [--ssh-port PORT]'
         [[ $# -lt 2 || -n ${2:-} ]] || fail 'Omit WORKSPACE for a named volume, or supply a nonempty directory path.'
         [[ $# -lt 3 || ${#port_option[@]} -eq 0 ]] || fail 'Use either positional SSH_PORT or --ssh-port, not both.'
         PORT=${port_option[0]-${3:-2222}}
@@ -169,23 +166,23 @@ parse_cli_args() {
                     python3 -B "$ROOT/src/host/azure_auth.py" --validate "${@:4}" || exit $?
                 else
                 [[ $action == tools && ( ( $# -eq 3 && ( $3 == t3 || $3 == azdo ) ) || ( $# -eq 4 && $3 == azdo && ( $4 == --persist || $4 == --clear ) ) ) ]] \
-                    || fail 'Usage: ./sandbox tools NAME setup t3, or setup azdo [--persist|--clear].'
+                    || fail 'Usage: ./sandbox NAME tools setup t3, or tools setup azdo [--persist|--clear].'
                 fi
             fi
             if [[ ${2:-} == login ]]; then
                 if [[ $action == tools ]]; then
-                    [[ $# -eq 3 && $3 == github ]] || fail 'Usage: ./sandbox tools NAME login github.'
+                    [[ $# -eq 3 && $3 == github ]] || fail 'Usage: ./sandbox NAME tools login github.'
                 else
                     [[ $# -eq 3 && ( $3 == codex || $3 == claude || $3 == opencode || $3 == copilot || $3 == hermes ) ]] \
-                        || fail 'Usage: ./sandbox agents NAME login codex|claude|opencode|copilot|hermes.'
+                        || fail 'Usage: ./sandbox NAME agents login codex|claude|opencode|copilot|hermes.'
                 fi
             fi
             ;;
         copilot|claude|codex|hermes|opencode|t3|deepseek)
-            [[ $# -eq 1 ]] || fail "Usage: ./sandbox $action NAME (for CLI arguments, use ./sandbox run NAME $action ...)" ;;
+            [[ $# -eq 1 ]] || fail "Usage: ./sandbox NAME $action (for CLI arguments, use ./sandbox NAME run $action ...)" ;;
     esac
     if [[ $action != build ]]; then
-        NAME=${1:-agent01}
+        NAME=$1
         [[ $NAME =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]] || fail 'Use an alphanumeric container name (plus _, ., -).'
         SSH_ROOT="$HOME/.ssh/sanboxed-agents"
         STATE="$SSH_ROOT/$NAME"

@@ -23,7 +23,6 @@ async function test() {
   fs.cpSync(path.join(project, 'src'), path.join(checkout, 'src'), { recursive: true });
   write(sshConfig, '# Test SSH configuration\n');
   write(path.join(mockBin, 'id'), '#!/bin/sh\nprintf "1000\\n"\n', 0o755);
-  const dummyPat = 'dummy-$();`literal`\" token\nnext';
   const recorder = `#!/usr/bin/env node
 const fs = require('node:fs');
 const args = process.argv.slice(2);
@@ -32,13 +31,6 @@ fs.appendFileSync(process.env.TEST_TRANSPORT_LOG, JSON.stringify({tool: require(
   write(path.join(mockBin, 'podman'), recorder + `
 if (args[0] === 'info') console.log('true');
 else if (args[0] === 'inspect') console.log(process.env.TEST_OWNER || process.env.TEST_PROJECT);
-else if (args[0] === 'exec' && args.includes('/usr/local/bin/sandbox-azdo')) {
-  const token = JSON.parse(fs.readFileSync(0, 'utf8'));
-  if (token !== ${JSON.stringify(dummyPat)}) process.exit(91);
-  if ('AZURE_DEVOPS_EXT_PAT' in process.env) process.exit(92);
-  console.log('projects: []');
-  process.exit(Number(process.env.TEST_LOGIN_EXIT || 0));
-}
 else if (args[0] === 'exec' && (args.includes('login') || args.includes('setup'))) process.exit(Number(process.env.TEST_LOGIN_EXIT || 0));
 else if (args[0] === 'exec' && args.includes('service') && args.at(-1) === 'start') process.exit(0);
 else if (process.env.TEST_REMOVE && ['stop', 'rm'].includes(args[0])) process.exit(args[0] === process.env.TEST_REMOVE_FAIL ? 1 : 0);
@@ -52,62 +44,72 @@ else process.exit(1); // No image/container: stop before creation in positive pa
     cwd: checkout, encoding: 'utf8', env: { ...process.env, HOME: hostHome, PATH: `${mockBin}:${process.env.PATH}`, TEST_PROJECT: checkout, TEST_TRANSPORT_LOG: transportLog, ...extraEnv },
   });
   for (const args of [
-    ['up', 'demo'], ['up', 'demo', '--agents', 'none'], ['up', 'demo', '--agents', ''],
-    ['up', 'demo', '--agents', 'codex,unknown'], ['up', 'demo', '--agents'],
-    ['up', 'demo', '--tools', 'tokentracker'],
-    ['up', 'demo', '--agents', 't3'],
-    ['up', 'demo', '--agents', 'codex', '--tools', 'hermes-dashboard'],
-    ['up', 'demo', '--agents', 'codex', '--tools', 'deepseek-ui'],
-    ['up', 'demo', '--agents', 'deepseek', '--tools', 'deepseek-ui@latest'],
-    ['up', 'demo', '--agents', 'hermes', '--tools', 'hermes-dashboard@latest'],
-    ['up', 'demo', '--agents', 'codex', '--tools', 'codex'],
-    ['up', 'demo', '--agents', 'codex', '--tools'],
-    ['up', 'demo', '--agents', 'codex', '--tools', 'tokentracker', '--tools', 'none'],
-    ['agents', 'demo', 'login'], ['agents', 'demo', 'login', 'codex', 'extra'],
-    ['agents', 'demo', 'login', 'all'], ['agents', 'demo', 'login', 'codex@latest'],
-    ['agents', 'demo', 'login', 'deepseek'], ['agents', 'demo', 'login', 'claude', '--console'], ['tools', 'demo', 'login', 'claude'], ['tools', 'demo', 'login', 'codex'],
-    ['agents', 'demo', 'login', 'opencode', '--provider', 'openai'], ['tools', 'demo', 'login', 'opencode'],
-    ['agents', 'demo', 'login', 'copilot', '--web-flow'], ['tools', 'demo', 'login', 'copilot'],
-    ['agents', 'demo', 'login', 'hermes', 'extra'], ['tools', 'demo', 'login', 'hermes'],
-    ['tools', 'demo', 'login'], ['tools', 'demo', 'login', 'github', 'extra'],
-    ['tools', 'demo', 'login', 'gh'], ['agents', 'demo', 'login', 'github'],
-    ['tools', 'demo', 'setup'], ['tools', 'demo', 'setup', 'github'],
-    ['tools', 'demo', 'setup', 't3', 'extra'], ['tools', 'demo', 'setup', 'azdo', 'extra'], ['agents', 'demo', 'setup', 'azdo'], ['agents', 'demo', 'setup', 't3'],
-    ['remove'], ['remove', 'demo', '--unknown'], ['remove', 'demo', '--volumes', '--volumes'], ['remove', 'demo', '--ssh-config', '--ssh-config'],
+    ['demo', 'up'], ['demo', 'up', '--agents', 'none'], ['demo', 'up', '--agents', ''],
+    ['demo', 'up', '--agents', 'codex,unknown'], ['demo', 'up', '--agents'],
+    ['demo', 'up', '--tools', 'tokentracker'],
+    ['demo', 'up', '--agents', 't3'],
+    ['demo', 'up', '--agents', 'codex', '--tools', 'hermes-dashboard'],
+    ['demo', 'up', '--agents', 'codex', '--tools', 'deepseek-ui'],
+    ['demo', 'up', '--agents', 'deepseek', '--tools', 'deepseek-ui@latest'],
+    ['demo', 'up', '--agents', 'hermes', '--tools', 'hermes-dashboard@latest'],
+    ['demo', 'up', '--agents', 'codex', '--tools', 'codex'],
+    ['demo', 'up', '--agents', 'codex', '--tools'],
+    ['demo', 'up', '--agents', 'codex', '--tools', 'tokentracker', '--tools', 'none'],
+    ['demo', 'agents', 'login'], ['demo', 'agents', 'login', 'codex', 'extra'],
+    ['demo', 'agents', 'login', 'all'], ['demo', 'agents', 'login', 'codex@latest'],
+    ['demo', 'agents', 'login', 'deepseek'], ['demo', 'agents', 'login', 'claude', '--console'], ['demo', 'tools', 'login', 'claude'], ['demo', 'tools', 'login', 'codex'],
+    ['demo', 'agents', 'login', 'opencode', '--provider', 'openai'], ['demo', 'tools', 'login', 'opencode'],
+    ['demo', 'agents', 'login', 'copilot', '--web-flow'], ['demo', 'tools', 'login', 'copilot'],
+    ['demo', 'agents', 'login', 'hermes', 'extra'], ['demo', 'tools', 'login', 'hermes'],
+    ['demo', 'tools', 'login'], ['demo', 'tools', 'login', 'github', 'extra'],
+    ['demo', 'tools', 'login', 'gh'], ['demo', 'agents', 'login', 'github'],
+    ['demo', 'tools', 'setup'], ['demo', 'tools', 'setup', 'github'],
+    ['demo', 'tools', 'setup', 't3', 'extra'], ['demo', 'tools', 'setup', 'azdo', 'extra'], ['demo', 'agents', 'setup', 'azdo'], ['demo', 'agents', 'setup', 't3'],
+    ['remove'], ['demo', 'remove', '--unknown'], ['demo', 'remove', '--volumes', '--volumes'], ['demo', 'remove', '--ssh-config', '--ssh-config'],
     ...Object.keys(catalog).map(id => [id]),
   ]) {
     assert.notEqual(cli(args).status, 0, JSON.stringify(args));
     assert.equal(fs.existsSync(transportLog), false, 'Rejected input reached Podman/SSH');
   }
-  const azdoArgs = ['azdo', 'demo', '--pat-env', '--', 'devops', 'project', 'list', '--organization', 'https://dev.azure.com/contoso'];
-  for (const args of [azdoArgs.filter(arg => arg !== '--pat-env'), ['azdo'], ['azdo', 'demo', '--pat-env']]) {
-    const result = cli(args, { AZURE_DEVOPS_EXT_PAT: dummyPat });
-    assert.notEqual(result.status, 0);
-    assert.equal(fs.existsSync(transportLog), false, 'Missing opt-in reached Podman');
-    assert.equal((result.stdout + result.stderr).includes('dummy-'), false);
+  // Old command-first forms, the removed azdo command, and reserved names fail
+  // before Podman with a hint that uses the name-first grammar.
+  for (const [args, hint] of [
+    [['up', 'demo', '--agents', 'codex'], './sandbox demo up --agents codex'],
+    [['agents', 'demo', 'login', 'claude'], './sandbox demo agents login claude'],
+    [['shell', 'demo'], './sandbox demo shell'],
+    [['claude'], './sandbox NAME claude'],
+    [['update', 'demo'], './sandbox demo update'],
+    [['update'], './sandbox update --all'],
+    [['demo'], './sandbox NAME COMMAND'],
+    [['demo', 'build'], './sandbox build'],
+    [['demo', 'list'], './sandbox list'],
+    [['demo', 'update', '--all'], './sandbox update --all'],
+    [['demo', 'update', 'other'], 'Update one sandbox per command: ./sandbox demo update'],
+    [['demo', 'bogus'], 'Unknown command: bogus'],
+    [['azdo', 'demo', '--pat-env', '--', 'devops', 'project', 'list'], './sandbox demo tools setup azdo --persist'],
+    [['demo', 'azdo', '--pat-env', '--', 'devops', 'project', 'list'], './sandbox demo tools setup azdo --persist'],
+    [['shell', 'up', '--agents', 'codex'], "'shell' is a command"],
+    [['list', 'up', '--agents', 'codex'], "'list' is a command"],
+    [['-x', 'up'], 'Use an alphanumeric container name'],
+  ]) {
+    const result = cli(args);
+    assert.notEqual(result.status, 0, JSON.stringify(args));
+    assert.ok(result.stderr.includes(hint), `${JSON.stringify(args)}: ${result.stderr}`);
+    assert.equal(fs.existsSync(transportLog), false, 'Rejected grammar reached Podman/SSH');
   }
-  for (const value of ['', undefined]) {
-    const result = cli(azdoArgs, { AZURE_DEVOPS_EXT_PAT: value });
-    assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /nonempty AZURE_DEVOPS_EXT_PAT/);
-    assert.equal(fs.existsSync(transportLog), false, 'Missing PAT reached Podman');
+  for (const args of [['demo', 'update', '--help'], ['update', '--help']]) {
+    const result = cli(args);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /\.\/sandbox NAME update .*\n.*\.\/sandbox update --all/);
   }
-  const foreign = cli(azdoArgs, { AZURE_DEVOPS_EXT_PAT: dummyPat, TEST_OWNER: '/foreign' });
-  assert.notEqual(foreign.status, 0);
-  assert.equal(fs.readFileSync(transportLog, 'utf8').includes('"exec"'), false);
-  fs.unlinkSync(transportLog);
-  for (const exitCode of [0, 7]) {
-    const result = cli(azdoArgs, { AZURE_DEVOPS_EXT_PAT: dummyPat, TEST_LOGIN_EXIT: String(exitCode) });
-    assert.equal(result.status, exitCode, result.stderr);
-    const logged = fs.readFileSync(transportLog, 'utf8');
-    const calls = logged.trim().split('\n').map(JSON.parse);
-    assert.deepEqual(calls.at(-1).args, ['exec', '-i', '--user', '1000:1000', '--workdir', '/workspace', 'demo', '/usr/local/bin/sandbox-azdo', '--pat-stdin', ...azdoArgs.slice(4)]);
-    assert.equal(logged.includes('dummy-'), false);
-    assert.equal((result.stdout + result.stderr).includes('dummy-'), false);
-    fs.unlinkSync(transportLog);
+  for (const args of [['--help'], ['help'], []]) {
+    const result = cli(args);
+    assert.equal(result.status, 0, JSON.stringify(args));
+    assert.match(result.stdout, /\.\/sandbox NAME agents login/);
+    assert.equal(result.stdout.includes('azdo NAME'), false);
   }
   for (const id of Object.keys(catalog)) {
-    assert.equal(cli([id, 'demo']).status, 0, id);
+    assert.equal(cli(['demo', id]).status, 0, id);
     const calls = fs.readFileSync(transportLog, 'utf8').trim().split('\n').map(JSON.parse);
     assert.deepEqual(calls.at(-1), { tool: 'ssh', args: ['-F', sshConfig, '-t', 'demo', `/usr/local/bin/sandbox-agents session ${id}`] });
     assert.equal(calls.some(call => call.args[0] === 'exec'), false, 'Shortcut attempted an installation');
@@ -116,7 +118,7 @@ else process.exit(1); // No image/container: stop before creation in positive pa
   for (const id of ['codex', 'claude', 'opencode', 'copilot', 'hermes', 'github']) {
     const kind = id === 'github' ? 'tools' : 'agents';
     for (const exitCode of [0, 7]) {
-      const result = cli([kind, 'demo', 'login', id], { TEST_LOGIN_EXIT: String(exitCode) });
+      const result = cli(['demo', kind, 'login', id], { TEST_LOGIN_EXIT: String(exitCode) });
       assert.equal(result.status, exitCode, 'Login exit code was lost');
       const calls = fs.readFileSync(transportLog, 'utf8').trim().split('\n').map(JSON.parse);
       assert.deepEqual(calls.at(-1), { tool: 'podman', args: ['exec', '-i', '--user', '1000:1000', '--workdir', '/workspace', 'demo', `/usr/local/bin/sandbox-${kind}`, 'login', id] });
@@ -126,7 +128,7 @@ else process.exit(1); // No image/container: stop before creation in positive pa
   }
   for (const target of [['t3'], ['azdo'], ['azdo', '--persist'], ['azdo', '--clear'], ['azure'], ['azure', '--tenant', 'tenant-1', '--tenant-only']]) {
     for (const exitCode of [0, 7]) {
-      assert.equal(cli(['tools', 'demo', 'setup', ...target], { TEST_LOGIN_EXIT: String(exitCode) }).status, exitCode);
+      assert.equal(cli(['demo', 'tools', 'setup', ...target], { TEST_LOGIN_EXIT: String(exitCode) }).status, exitCode);
       const calls = fs.readFileSync(transportLog, 'utf8').trim().split('\n').map(JSON.parse);
       assert.deepEqual(calls.at(-1), { tool: 'podman', args: ['exec', '-i', '--user', '1000:1000', '--workdir', '/workspace', 'demo', '/usr/local/bin/sandbox-tools', 'setup', ...target] });
       assert.equal(calls.some(call => call.tool === 'ssh' || call.args.includes('init')), false);
@@ -134,8 +136,8 @@ else process.exit(1); // No image/container: stop before creation in positive pa
     }
   }
   // --interactive runs the host controller over pinned SSH instead of podman exec.
-  const browserArgs = ['tools', 'demo', 'setup', 'azure', '--tenant', 'tenant-1', '--interactive'];
-  assert.match(cli(browserArgs).stderr, /Configure SSH first: \.\/sandbox ssh-config demo --install/);
+  const browserArgs = ['demo', 'tools', 'setup', 'azure', '--tenant', 'tenant-1', '--interactive'];
+  assert.match(cli(browserArgs).stderr, /Configure SSH first: \.\/sandbox demo ssh-config --install/);
   const sshFiles = ['known_hosts', 'id_ed25519'].map(file => path.join(path.dirname(sshConfig), file));
   for (const file of sshFiles) write(file, 'fixture');
   const browserSetup = cli(browserArgs);
@@ -147,30 +149,30 @@ else process.exit(1); // No image/container: stop before creation in positive pa
     && call.args.at(-1).includes('azure_setup.py --host-protocol --tenant tenant-1 --interactive')));
   fs.unlinkSync(transportLog);
   for (const spec of ['codex', 'all', 'claude,codex']) {
-    const result = cli(['up', 'demo', '--agents', spec]);
+    const result = cli(['demo', 'up', '--agents', spec]);
     assert.match(result.stderr, /Build the image first/, 'Explicit agent selection was rejected');
     fs.unlinkSync(transportLog);
   }
   for (const spec of ['t3', 'hermes-dashboard', 'deepseek-ui', 'tokentracker', 'tokentracker@0.97.2', 'all', 'none']) {
-    const result = cli(['up', 'demo', '--agents', 'hermes,deepseek', '--tools', spec]);
+    const result = cli(['demo', 'up', '--agents', 'hermes,deepseek', '--tools', spec]);
     assert.match(result.stderr, /Build the image first/);
     fs.unlinkSync(transportLog);
   }
   for (const args of [
-    ['tools', 'demo', 'enable', 'tokentracker'], ['tools', 'demo', 'set', 'none'],
-    ['tool', 'demo', 'tokentracker', '--version'], ['service', 'demo', 'tokentracker', 'status'],
+    ['demo', 'tools', 'enable', 'tokentracker'], ['demo', 'tools', 'set', 'none'],
+    ['demo', 'tool', 'tokentracker', '--version'], ['demo', 'service', 'tokentracker', 'status'],
   ]) {
     cli(args); // Mock Podman records the call then reports an unavailable exec.
     const calls = fs.readFileSync(transportLog, 'utf8').trim().split('\n').map(JSON.parse);
-    const expected = args[0] === 'service' ? ['service', 'tokentracker', 'status']
-      : args[0] === 'tool' ? ['run', 'tokentracker', '--version'] : args.slice(2);
+    const expected = args[1] === 'service' ? ['service', 'tokentracker', 'status']
+      : args[1] === 'tool' ? ['run', 'tokentracker', '--version'] : args.slice(2);
     const last = calls.at(-1).args;
     assert.equal(last[0], 'exec');
     assert.deepEqual(last.slice(last.indexOf('/usr/local/bin/sandbox-tools')), ['/usr/local/bin/sandbox-tools', ...expected]);
     fs.unlinkSync(transportLog);
   }
   for (const workspace of [hostHome, path.dirname(sshConfig), path.join(path.dirname(sshConfig), 'demo')]) {
-    const result = cli(['up', 'demo', workspace, '--agents', 'codex']);
+    const result = cli(['demo', 'up', workspace, '--agents', 'codex']);
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /Workspace must not (contain|be inside) host SSH/);
     fs.unlinkSync(transportLog);
@@ -183,7 +185,7 @@ else process.exit(1); // No image/container: stop before creation in positive pa
   fs.symlinkSync(checkout, checkoutLink);
   fs.symlinkSync(path.join(checkout, 'src/host'), scriptsLink);
   const assertProtectedWorkspace = workspace => {
-    const result = cli(['up', 'demo', workspace, '--agents', 'codex']);
+    const result = cli(['demo', 'up', workspace, '--agents', 'codex']);
     assert.notEqual(result.status, 0, workspace);
     assert.match(result.stderr, /Workspace must not (contain|be inside) host SSH\/controller files or state/, workspace);
     const calls = fs.readFileSync(transportLog, 'utf8').trim().split('\n').map(JSON.parse);
@@ -219,13 +221,13 @@ else process.exit(1); // No image/container: stop before creation in positive pa
     externalWorkspace, path.join(checkout, 'workspace-link'),
     path.join(checkout, 'scripts-project'), // Compare path components, not prefixes.
   ]) {
-    const result = cli(['up', 'demo', workspace, '--agents', 'codex']);
+    const result = cli(['demo', 'up', workspace, '--agents', 'codex']);
     assert.match(result.stderr, /Build the image first/, `Safe workspace rejected: ${workspace}`);
     fs.unlinkSync(transportLog);
   }
   for (const [target, remotePort] of [['hermes', 9119], ['hermes-dashboard', 9119], ['deepseek', 3080], ['deepseek-ui', 3080], ['t3', 3773], ['tokentracker', 7680]]) {
     for (const localPort of [undefined, '9120']) {
-      const result = cli(['forward', 'demo', target, ...(localPort ? [localPort] : [])]);
+      const result = cli(['demo', 'forward', target, ...(localPort ? [localPort] : [])]);
       assert.equal(result.status, 0, result.stderr);
       const calls = fs.readFileSync(transportLog, 'utf8').trim().split('\n').map(JSON.parse);
       assert.deepEqual(calls.at(-1), { tool: 'ssh', args: ['-F', sshConfig, '-o', 'ExitOnForwardFailure=yes', '-N', '-L', `127.0.0.1:${localPort ?? remotePort}:127.0.0.1:${remotePort}`, 'demo'] });
@@ -235,19 +237,19 @@ else process.exit(1); // No image/container: stop before creation in positive pa
       fs.unlinkSync(transportLog);
     }
   }
-  assert.notEqual(cli(['forward', 'demo', 'tokentracker'], { TEST_START_FAILED: '1' }).status, 0);
+  assert.notEqual(cli(['demo', 'forward', 'tokentracker'], { TEST_START_FAILED: '1' }).status, 0);
   const failedStartCalls = fs.readFileSync(transportLog, 'utf8').trim().split('\n').map(JSON.parse);
   assert.equal(failedStartCalls.some(call => call.tool === 'ssh' && call.args.includes('-L')), false, 'Opened a tunnel after dashboard startup failed');
   fs.unlinkSync(transportLog);
-  const shown = cli(['ssh-config', 'demo']);
+  const shown = cli(['demo', 'ssh-config']);
   assert.equal(shown.status, 0);
   assert.match(shown.stdout, /Test SSH configuration/);
   assert.equal(fs.existsSync(transportLog), false, 'Local SSH config display contacted Podman');
-  assert.notEqual(cli(['ssh-config', 'demo', '--invalid']).status, 0);
+  assert.notEqual(cli(['demo', 'ssh-config', '--invalid']).status, 0);
   assert.equal(fs.existsSync(transportLog), false, 'Invalid SSH config option contacted Podman');
   const userConfig = path.join(hostHome, '.ssh/config');
   write(userConfig, 'ServerAliveInterval 42\n');
-  const installConfig = cli(['ssh-config', 'demo', '--install']);
+  const installConfig = cli(['demo', 'ssh-config', '--install']);
   assert.equal(installConfig.status, 0, installConfig.stderr);
   assert.equal(fs.existsSync(transportLog), false, 'SSH Include installation contacted Podman');
   assert.equal(fs.readFileSync(userConfig, 'utf8'), `Include "${sshConfig}"\nHost *\n\nServerAliveInterval 42\n`);
@@ -267,7 +269,7 @@ else process.exit(1); // No image/container: stop before creation in positive pa
   };
   for (const flags of [[], ['--volumes'], ['--ssh-config'], ['--volumes', '--ssh-config'], ['--ssh-config', '--volumes']]) {
     seedRemoval();
-    const result = cli(['remove', 'demo', ...flags], { TEST_REMOVE: '1' });
+    const result = cli(['demo', 'remove', ...flags], { TEST_REMOVE: '1' });
     assert.equal(result.status, 0, result.stderr);
     const calls = fs.readFileSync(transportLog, 'utf8').trim().split('\n').map(JSON.parse);
     assert.deepEqual(calls.filter(call => ['stop', 'rm'].includes(call.args[0])).map(call => call.args), [['stop', 'demo'], ['rm', 'demo']]);
@@ -283,7 +285,7 @@ else process.exit(1); // No image/container: stop before creation in positive pa
   for (const failure of [{ TEST_REMOVE_FAIL: 'stop' }, { TEST_REMOVE_FAIL: 'rm' }, { TEST_OWNER: '/foreign' }, { TEST_FOREIGN_VOLUME: '1' }]) {
     seedRemoval();
     const before = fs.readFileSync(userConfig, 'utf8');
-    assert.notEqual(cli(['remove', 'demo', '--volumes'], { TEST_REMOVE: '1', ...failure }).status, 0);
+    assert.notEqual(cli(['demo', 'remove', '--volumes'], { TEST_REMOVE: '1', ...failure }).status, 0);
     assert.equal(fs.existsSync(sshConfig), true, 'Failed container removal deleted SSH files');
     assert.equal(fs.readFileSync(userConfig, 'utf8'), before);
     if (!failure.TEST_REMOVE_FAIL) {
@@ -297,7 +299,7 @@ else process.exit(1); // No image/container: stop before creation in positive pa
   const savedState = path.join(fixture, 'saved-ssh-state');
   fs.renameSync(path.dirname(sshConfig), savedState);
   fs.symlinkSync(savedState, path.dirname(sshConfig));
-  const invalidState = cli(['remove', 'demo'], { TEST_REMOVE: '1' });
+  const invalidState = cli(['demo', 'remove'], { TEST_REMOVE: '1' });
   assert.notEqual(invalidState.status, 0);
   assert.match(invalidState.stderr, /unexpected SSH state path/);
   const invalidCalls = fs.readFileSync(transportLog, 'utf8').trim().split('\n').map(JSON.parse);
@@ -307,7 +309,7 @@ else process.exit(1); // No image/container: stop before creation in positive pa
   fs.unlinkSync(transportLog);
 
   // A failed volume deletion must not retain a connection to a removed container.
-  const volumeFailure = cli(['remove', 'demo', '--volumes'], { TEST_REMOVE: '1', TEST_VOLUME_REMOVE_FAIL: '1' });
+  const volumeFailure = cli(['demo', 'remove', '--volumes'], { TEST_REMOVE: '1', TEST_VOLUME_REMOVE_FAIL: '1' });
   assert.notEqual(volumeFailure.status, 0);
   assert.equal(fs.existsSync(path.dirname(sshConfig)), false);
   assert.equal(fs.readFileSync(userConfig, 'utf8').includes(sshConfig), false);
@@ -316,7 +318,7 @@ else process.exit(1); // No image/container: stop before creation in positive pa
   // Sandboxes created without SSH setup can be removed without creating SSH files.
   const noSSHHome = path.join(fixture, 'home-without-ssh');
   fs.mkdirSync(noSSHHome);
-  const withoutSSH = cli(['remove', 'demo'], { TEST_REMOVE: '1', HOME: noSSHHome });
+  const withoutSSH = cli(['demo', 'remove'], { TEST_REMOVE: '1', HOME: noSSHHome });
   assert.equal(withoutSSH.status, 0, withoutSSH.stderr);
   assert.equal(fs.existsSync(path.join(noSSHHome, '.ssh')), false);
 

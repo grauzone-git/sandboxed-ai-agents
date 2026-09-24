@@ -79,8 +79,8 @@ else: sys.exit('Unexpected Podman call: ' + repr(args))
         self.assertIn("[127.0.0.1]:2222", (self.config.parent / "known_hosts").read_text())
 
     def test_default_up_and_start_create_no_local_ssh(self):
-        self.cli("up", "demo", "--agents", "codex")
-        self.cli("start", "demo")
+        self.cli("demo", "up", "--agents", "codex")
+        self.cli("demo", "start")
         self.assertFalse((self.home / ".ssh").exists())
         self.assertFalse(self.authorized.exists())
         self.assertFalse(any(call[0] == "port" for call in self.calls()))
@@ -89,38 +89,38 @@ else: sys.exit('Unexpected Podman call: ' + repr(args))
     def test_up_flag_creates_files_and_include_preserving_user_config(self):
         self.user_config.parent.mkdir()
         self.user_config.write_text("Host existing\n    HostName example.test\n")
-        self.cli("up", "demo", "--ssh-config", "--agents", "codex")
+        self.cli("demo", "up", "--ssh-config", "--agents", "codex")
         self.assert_setup()
         self.assertIn("Host existing\n    HostName example.test\n", self.user_config.read_text())
         snapshot = {p: p.read_bytes() for p in (self.user_config, *self.config.parent.iterdir())}
-        self.cli("up", "demo", "--agents", "codex")
-        self.cli("start", "demo")
+        self.cli("demo", "up", "--agents", "codex")
+        self.cli("demo", "start")
         self.assertEqual(snapshot, {p: p.read_bytes() for p in snapshot})
-        self.cli("start", "demo", "--ssh-config")
+        self.cli("demo", "start", "--ssh-config")
         self.assert_setup()
         self.assertEqual(snapshot, {p: p.read_bytes() for p in snapshot})
 
     def test_start_flag_creates_missing_files(self):
-        self.cli("start", "demo", "--ssh-config")
+        self.cli("demo", "start", "--ssh-config")
         self.assert_setup()
 
     def test_later_install_creates_files_then_works_offline(self):
-        missing = self.cli("ssh-config", "demo", success=False)
-        self.assertIn("ssh-config demo --install", missing.stderr)
+        missing = self.cli("demo", "ssh-config", success=False)
+        self.assertIn("demo ssh-config --install", missing.stderr)
         self.assertEqual(self.calls(), [])
         self.assertFalse((self.home / ".ssh").exists())
-        self.cli("ssh-config", "demo", "--install")
+        self.cli("demo", "ssh-config", "--install")
         self.assert_setup()
         calls = self.calls()
-        self.cli("ssh-config", "demo", "--install")
-        self.assertEqual(self.cli("ssh-config", "demo").stdout, self.config.read_text())
+        self.cli("demo", "ssh-config", "--install")
+        self.assertEqual(self.cli("demo", "ssh-config").stdout, self.config.read_text())
         self.assertEqual(self.calls(), calls, "Existing config operations contacted Podman")
         self.assert_setup()
 
     def test_invalid_flags_fail_before_podman(self):
-        for args in [("up", "demo", "--agents", "codex", "--ssh-config", "--ssh-config"),
-                     ("start", "demo", "--unknown"), ("start",),
-                     ("start", "demo", "--ssh-config", "--ssh-config")]:
+        for args in [("demo", "up", "--agents", "codex", "--ssh-config", "--ssh-config"),
+                     ("demo", "start", "--unknown"), ("start",),
+                     ("demo", "start", "--ssh-config", "--ssh-config")]:
             self.cli(*args, success=False)
         self.assertEqual(self.calls(), [])
         self.assertFalse((self.home / ".ssh").exists())
