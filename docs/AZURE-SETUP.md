@@ -5,8 +5,8 @@ Plain setup uses device code. `--interactive` uses a host browser and a temporar
 loopback SSH callback forward, all managed by one foreground command.
 
 The Linux controller and native Windows PowerShell controller implement this
-workflow. The live validation matrix below is still pending for this
-implementation. WSL-shell controller integration with a Windows browser is
+workflow. The live validation matrix below records passing runs on both hosts
+for both clouds. WSL-shell controller integration with a Windows browser is
 separate and remains unverified.
 
 ## Commands
@@ -73,7 +73,10 @@ It replaces the active Azure context only after login and context selection
 succeed. Failed or cancelled setup retains the prior session and cloud settings,
 including a prior manual `az login` or device-code session. Stop concurrent Azure
 commands while replacing a session; setup refuses publication when it detects
-changed Azure state. Setup attempts are serialized within the sandbox.
+changed Azure state. Setup attempts are serialized within the sandbox. Custom
+cloud registrations in `clouds.config` are kept. If the host command stops after
+it has committed the new sign-in, it says the sandbox may already use it; check
+with `az account show` instead of assuming the prior session was kept.
 
 The result is the normal `~/.azure` configuration. Ordinary `az` commands and
 agents use it without an environment export. Unset an alternate
@@ -252,5 +255,5 @@ Offline regression tests cover setup defaults, cloud and context selection,
 replacement rollback, callback validation/lifecycle, and host argument handling.
 Update regression tests cover retaining the home volume across recreation and
 rollback. These tests do not establish real login, renewal, native browser
-compatibility, or China service availability. The implementation issues remain
-incomplete until the required human-run matrix has recorded evidence.
+compatibility, or China service availability; the human-run matrix above
+records that evidence.

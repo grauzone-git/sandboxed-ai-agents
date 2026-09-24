@@ -133,6 +133,19 @@ else process.exit(1); // No image/container: stop before creation in positive pa
       fs.unlinkSync(transportLog);
     }
   }
+  // --interactive runs the host controller over pinned SSH instead of podman exec.
+  const browserArgs = ['tools', 'demo', 'setup', 'azure', '--tenant', 'tenant-1', '--interactive'];
+  assert.match(cli(browserArgs).stderr, /Configure SSH first: \.\/sandbox ssh-config demo --install/);
+  const sshFiles = ['known_hosts', 'id_ed25519'].map(file => path.join(path.dirname(sshConfig), file));
+  for (const file of sshFiles) write(file, 'fixture');
+  const browserSetup = cli(browserArgs);
+  for (const file of sshFiles) fs.unlinkSync(file);
+  assert.match(browserSetup.stderr, /ended before completion/, 'The fake SSH login ends immediately');
+  const routed = fs.readFileSync(transportLog, 'utf8').trim().split('\n').map(JSON.parse);
+  assert.equal(routed.some(call => call.tool === 'podman' && call.args[0] === 'exec'), false);
+  assert.ok(routed.some(call => call.tool === 'ssh' && call.args.includes('demo')
+    && call.args.at(-1).includes('azure_setup.py --host-protocol --tenant tenant-1 --interactive')));
+  fs.unlinkSync(transportLog);
   for (const spec of ['codex', 'all', 'claude,codex']) {
     const result = cli(['up', 'demo', '--agents', spec]);
     assert.match(result.stderr, /Build the image first/, 'Explicit agent selection was rejected');

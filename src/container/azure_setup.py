@@ -5,7 +5,9 @@ import io
 import json
 import os
 from pathlib import Path
+import shlex
 import signal
+import socket
 import queue
 import threading
 import time
@@ -18,20 +20,33 @@ from azure_process import run
 SESSION_FILES = ('azureProfile.json', 'msal_token_cache.json', 'msal_token_cache.bin',
                  'msal_http_cache.bin', 'service_principal_entries.json',
                  'service_principal_entries.bin', 'accessTokens.json', 'clouds.config', 'config')
+# Login never writes these; keep the user's copy instead of deleting it.
+PRESERVED_FILES = ('clouds.config',)
 
 
-def failure_message(detail):
+class SetupError(ValueError):
+    """A failure whose category the host maps to its own text, never echoing remote output."""
+    def __init__(self, category, message):
+        super().__init__(message)
+        self.category = category
+
+
+def failure(detail):
     detail = detail.lower()
     if any(value in detail for value in ('interaction_required', 'interactionrequired',
                                         'aadsts50076', 'aadsts50079', 'aadsts50158',
                                         'aadsts70043', 'aadsts700082', 'aadsts700084',
                                         'aadsts50058', 'invalid_grant')):
-        return 'Azure interaction required. Rerun explicit Azure setup, then decide whether to retry your command.'
+        return SetupError('interaction', 'Azure interaction required. Rerun explicit Azure setup, then decide whether to retry your command.')
     if any(value in detail for value in ('authorizationfailed', 'forbidden', 'permission', '403')):
-        return 'Azure permission denied. Check tenant, subscription, and role assignments before retrying setup.'
+        return SetupError('permission', 'Azure permission denied. Check tenant, subscription, and role assignments before retrying setup.')
     if any(value in detail for value in ('connection', 'timeout', 'resolve', 'network', 'ssl')):
-        return 'Azure network request failed. Check connectivity and retry explicit setup.'
-    return 'Azure sign-in or context selection failed. Check your selection and retry explicit setup.'
+        return SetupError('network', 'Azure network request failed. Check connectivity and retry explicit setup.')
+    return SetupError('setup', 'Azure sign-in or context selection failed. Check your selection and retry explicit setup.')
+
+
+def cancelled_error():
+    return SetupError('cancelled', 'Azure setup cancelled or timed out. Retry explicit setup.')
 
 
 def snapshot(directory):
@@ -66,7 +81,7 @@ def publish(active, pending, before):
             if source.exists():
                 source.chmod(0o600)
                 os.replace(source, active / name)
-            else:
+            elif name not in PRESERVED_FILES:
                 (active / name).unlink(missing_ok=True)
     except BaseException:
         for name in changed:
@@ -116,7 +131,7 @@ class Session:
                 return self.answers.get(timeout=0.1)
             except queue.Empty:
                 continue
-        raise ValueError('Azure setup cancelled or timed out. Retry explicit setup.')
+        raise cancelled_error()
 
     def prompt(self, kind):
         if self.hosted:
@@ -133,7 +148,9 @@ def main(args, session=None):
     session = session or Session(False)
     options = parse(args)
     if options.interactive and not session.hosted:
-        raise ValueError('Run host command: ./sandbox tools NAME setup azure --interactive (native Windows: ./sandbox.ps1 tools NAME setup azure --interactive).')
+        # The container hostname is the sandbox name.
+        command = f'tools {socket.gethostname()} setup azure {shlex.join(args)}'
+        raise ValueError(f'Run on the host: ./sandbox {command} (native Windows: ./sandbox.ps1 {command}).')
     if not options.tenant:
         options.tenant = session.prompt('tenant')
         parse(['--tenant', options.tenant])
@@ -161,11 +178,16 @@ def main(args, session=None):
                'AZURE_CORE_LOGIN_EXPERIENCE_V2': 'off',
                'AZURE_CORE_ENABLE_BROKER_ON_WINDOWS': 'false'}
         def az(command, output='none'):
-            code, stdout, stderr = run([*command, '--output', output], env,
-                                       session.notify, session.cancelled,
-                                       timeout=max(0, session.deadline - time.monotonic()))
+            try:
+                code, stdout, stderr = run([*command, '--output', output], env,
+                                           session.notify, session.cancelled,
+                                           timeout=max(0, session.deadline - time.monotonic()))
+            except ValueError:
+                if session.cancelled():
+                    raise cancelled_error() from None
+                raise
             if code:
-                raise ValueError(failure_message(stderr))
+                raise failure(stderr)
             return stdout
         az(['cloud', 'set', '--name', cloud])
         az(['login', *([] if options.interactive else ['--use-device-code']), '--tenant', options.tenant,
@@ -175,7 +197,7 @@ def main(args, session=None):
                 accounts = json.loads(az(['account', 'list'], 'json'))
                 if not session.hosted:
                     for account in accounts:
-                        print(f'{account["id"]}: {account["name"]}')
+                        print(f'{account.get("id", "")}: {account.get("name", "")}')
                 options.subscription = session.prompt('subscription')
                 if not options.subscription:
                     raise ValueError('Select a subscription, or retry with --tenant-only.')
@@ -184,9 +206,9 @@ def main(args, session=None):
         if session.hosted:
             session.notify('ready')
             if session.answer().get('commit') is not True:
-                raise ValueError('Azure setup cancelled before replacing the session.')
+                raise cancelled_error()
         if session.cancelled():
-            raise ValueError('Azure setup cancelled before replacing the session.')
+            raise cancelled_error()
         publish(active, pending, before)
     if session.hosted:
         session.notify('complete')
@@ -210,13 +232,14 @@ if __name__ == '__main__':
         lock_directory = Path.home() / '.local/state/sandbox-agents'
         lock_directory.mkdir(parents=True, mode=0o700, exist_ok=True)
         with (lock_directory / 'azure-setup.lock').open('w') as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise SetupError('busy', 'Another Azure setup is running in this sandbox. Wait for it to finish, then retry.') from None
             sys.exit(main(args, session))
     except ValueError as error:
         if hosted:
-            message = str(error).lower()
-            category = next((name for name in ('interaction', 'permission', 'network') if name in message), 'setup')
-            session.notify('error', category)
+            session.notify('error', getattr(error, 'category', 'setup'))
             sys.exit(1)
         sys.exit(f'Error: {error} The preceding session was retained.')
     except (KeyboardInterrupt, EOFError):

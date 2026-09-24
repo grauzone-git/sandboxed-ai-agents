@@ -21,6 +21,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'container'))
 from azure_options import CLOUDS, parse
 
 
+COMMITTED_UNCONFIRMED = ('Azure setup stopped after the new sign-in was committed, so the sandbox may already '
+                         'use it. Check with az account show in the sandbox before retrying setup.')
+
+
 def callback(url, cloud):
     error = 'Azure returned an unexpected authorization endpoint or callback. Retry explicit setup after updating the image.'
     try:
@@ -173,6 +177,7 @@ def interactive(name, config, arguments, *, popen=subprocess.Popen, browser=laun
         finally:
             events.put(None)
 
+    committed = False
     try:
         if threading.current_thread() is threading.main_thread():
             for signum in (signal.SIGTERM, *([signal.SIGHUP] if hasattr(signal, 'SIGHUP') else [])):
@@ -183,7 +188,7 @@ def interactive(name, config, arguments, *, popen=subprocess.Popen, browser=laun
         complete = False
         while not complete:
             if time.monotonic() >= deadline:
-                raise ValueError('Azure setup timed out. Retry explicit setup.')
+                raise ValueError(COMMITTED_UNCONFIRMED if committed else 'Azure setup timed out. Retry explicit setup.')
             if forward is not None and forward.poll() is not None:
                 raise ValueError('Azure callback forwarding stopped. Check SSH access and retry --interactive.')
             try:
@@ -191,6 +196,8 @@ def interactive(name, config, arguments, *, popen=subprocess.Popen, browser=laun
             except queue.Empty:
                 continue
             if line is None:
+                if committed:
+                    raise ValueError(COMMITTED_UNCONFIRMED)
                 raise ValueError('Sandbox Azure setup ended before completion. Check SSH access, update the image, and retry setup.')
             try:
                 event = json.loads(line)
@@ -202,7 +209,7 @@ def interactive(name, config, arguments, *, popen=subprocess.Popen, browser=laun
                     raise ValueError('Unexpected second browser request. Retry explicit setup.')
                 if options.cloud and event.get('cloud') != options.cloud:
                     raise ValueError('The sandbox returned a different cloud. Update the image and retry explicit setup.')
-                port = callback(event['value'], event['cloud'])
+                port = callback(event.get('value'), event.get('cloud'))
                 with socket.socket() as probe:
                     if os.name == 'nt':
                         probe.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
@@ -231,6 +238,7 @@ def interactive(name, config, arguments, *, popen=subprocess.Popen, browser=laun
                 login.stdin.write(json.dumps({'answer': answer}) + '\n')
                 login.stdin.flush()
             elif kind == 'ready':
+                committed = True
                 login.stdin.write('{"commit":true}\n')
                 login.stdin.flush()
             elif kind == 'complete':
@@ -238,13 +246,20 @@ def interactive(name, config, arguments, *, popen=subprocess.Popen, browser=laun
             elif kind == 'error':
                 messages = {'interaction': 'Azure interaction required. Retry explicit setup.',
                             'permission': 'Azure permission denied. Check tenant, subscription, and roles.',
-                            'network': 'Azure network request failed. Check connectivity and retry setup.'}
+                            'network': 'Azure network request failed. Check connectivity and retry setup.',
+                            'cancelled': 'Azure setup was cancelled or timed out in the sandbox; the preceding session was retained. Retry explicit setup.',
+                            'busy': 'Another Azure setup is running in this sandbox. Wait for it to finish, then retry.'}
                 raise ValueError(messages.get(event.get('value'), 'Azure setup failed; the preceding session was retained. Check your selection and retry setup.'))
             else:
                 raise ValueError('Unexpected Azure setup response. Update the image and retry.')
         if login.wait(timeout=5):
             raise ValueError('Azure setup did not exit cleanly. Check the sandbox account context before retrying.')
         print('Azure setup completed. The callback tunnel is closing.')
+    except KeyboardInterrupt:
+        # After commit the sandbox may already have replaced the session.
+        if committed:
+            raise ValueError(COMMITTED_UNCONFIRMED) from None
+        raise
     finally:
         if login is not None and login.stdin is not None:
             try:
