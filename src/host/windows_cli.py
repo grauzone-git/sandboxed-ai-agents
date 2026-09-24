@@ -239,9 +239,9 @@ def main(args, *, runner=subprocess.run):
         runtime = Runtime(runner)
         runtime.preflight()
         if args[0] == 'list':
-            def runner(*command, capture=False, check=True):
+            def podman(*command, capture=False, check=True):
                 return runtime.run(*command, capture=capture, allowed=(0,) if check else tuple(range(256)))
-            print(sandboxes.render(sandboxes.sandboxes(project, runner)))
+            print(sandboxes.render(sandboxes.sandboxes(project, podman)))
             return 0
         if command is not None:
             windows_commands.execute(runtime, project, command)

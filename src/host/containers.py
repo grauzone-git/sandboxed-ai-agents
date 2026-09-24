@@ -7,6 +7,12 @@ from capabilities import CAPABILITIES_LABEL, parse_capabilities, seccomp_path
 LABEL = 'io.sandboxed-agents.project'
 
 
+def owned_names(owner, runner):
+    """Names of containers labelled as owned by OWNER; callers still verify ownership."""
+    return runner('ps', '--all', '--filter', f'label={LABEL}={owner}', '--format', '{{.Names}}',
+                  capture=True).stdout.split()
+
+
 def create_args(name, project, image, workspace, port, memory, cpus,
                 pids=2048, shm='1g', operation='run', capabilities='none', seccomp=None):
     capabilities = parse_capabilities(capabilities)
