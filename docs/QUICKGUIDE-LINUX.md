@@ -45,6 +45,7 @@ Remote - SSH to connect to `agent01`, then open `/workspace`. The SSH user is
 
 | Task | Host command |
 |---|---|
+| List sandboxes | `./sandbox list` |
 | Stop / start | `./sandbox agent01 stop` / `./sandbox agent01 start` |
 | Add SSH to a running sandbox | `./sandbox agent01 ssh-config --install` |
 | Check toolchain and mounts | `./sandbox agent01 check` |

@@ -204,12 +204,13 @@ report a vulnerability.
 ## Command reference
 
 Commands take the sandbox name first: `./sandbox NAME COMMAND [SUBCOMMAND] [PARAMETERS]`.
-Only `build` and `update --all` run without a name, and command names cannot be
+Only `build`, `list` and `update --all` run without a name, and command names cannot be
 used as sandbox names. A sandbox created earlier under a command name, such as
 `claude`, can no longer be addressed by the launcher; manage it with Podman.
 
 ```text
 ./sandbox build [podman build args]
+./sandbox list                                # sandboxes owned by this checkout
 ./sandbox NAME up [WORKSPACE [SSH_PORT]] --agents LIST [--tools LIST] [--capabilities LIST] [--ssh-config]
 ./sandbox NAME start|restart|stop|shell|check|check-full|fingerprint
 ./sandbox NAME agents list|check|set|enable|disable|update|login ...

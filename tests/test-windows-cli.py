@@ -28,6 +28,7 @@ class WindowsCliTests(unittest.TestCase):
         self.volumes = {}
         self.exists = False
         self.owner_override = None
+        self.listed = []
         self.container_state = {'Status': 'running', 'ExitCode': 0, 'OOMKilled': False}
         self.connection = {'Name': 'machine', 'Default': True, 'IsMachine': True,
                            'URI': 'ssh://user@127.0.0.1:12345/run/user/1000/podman/podman.sock'}
@@ -82,6 +83,14 @@ class WindowsCliTests(unittest.TestCase):
             elif args[0] == 'inspect':
                 from windows_paths import checkout_identity
                 output = json.dumps([{'Id': 'c' * 64, 'Name': 'agent01', 'Mounts': [{'Type': 'volume', 'Name': 'agent01-' + suffix, 'Destination': dest} for suffix, dest in [('home', '/home/agent'), ('sshd', '/var/lib/agent-sshd'), ('workspace', '/workspace')]], 'State': self.container_state, 'Config': {'Labels': {'io.sandboxed-agents.project': self.owner_override or checkout_identity(PROJECT)}}}])
+            elif args[0] == 'ps':
+                wanted = args[args.index('--filter') + 1]
+                output = '\n'.join(item['Name'] for item in self.listed
+                                    if f"label=io.sandboxed-agents.project={item['Config']['Labels']['io.sandboxed-agents.project']}" == wanted)
+            elif args[:2] == ['container', 'inspect']:
+                output = json.dumps([item for item in self.listed if item['Name'] == args[-1]])
+            elif args[0] == 'exec' and args[-1].endswith('/sandbox-agents/config.json'):
+                output = json.dumps({'enabled': {'codex': 'latest'}})
             elif args[0] == 'port':
                 output = '127.0.0.1:2297\n'
             elif args[0] == 'exec' and args[-1] == '/var/lib/agent-sshd/ssh_host_ed25519_key.pub' and '/bin/cat' in args:
@@ -605,6 +614,33 @@ class WindowsCliTests(unittest.TestCase):
         self.calls.clear()
         self.assertEqual(self.cli('agent01', 'forward', 't3'), 1)
         self.assertFalse(any('exec' in call or '-L' in call for call in self.calls))
+
+    def test_list_shows_only_checkout_owned_sandboxes(self):
+        from windows_paths import checkout_identity
+
+        def listed(name, owner, running, port):
+            return {'Name': name, 'Config': {'Labels': {'io.sandboxed-agents.project': owner}},
+                    'State': {'Status': 'running' if running else 'exited', 'Running': running},
+                    'Mounts': [{'Type': 'bind', 'Source': '/mnt/c/work/' + name, 'Destination': '/workspace'}],
+                    'HostConfig': {'PortBindings': {'2222/tcp': [{'HostIp': '127.0.0.1', 'HostPort': port}]}}}
+        owner = checkout_identity(PROJECT)
+        self.listed = [listed('agent02', owner, False, '2223'), listed('agent01', owner, True, '2222'),
+                       listed('foreign', 'another-checkout', True, '2224')]
+        self.assertEqual(self.cli('list'), 0, self.output.getvalue())
+        self.assertEqual([line.split() for line in self.output.getvalue().splitlines()], [
+            ['NAME', 'STATE', 'SSH', 'PORT', 'AGENTS', 'WORKSPACE'],
+            ['agent01', 'running', '2222', 'codex', '/mnt/c/work/agent01'],
+            ['agent02', 'stopped', '2223', '-', '/mnt/c/work/agent02'],
+        ])
+        self.assertFalse([call for call in self.calls if call[2:3] in (['start'], ['stop'], ['rm'])])
+
+    def test_list_without_sandboxes_and_with_arguments(self):
+        self.assertEqual(self.cli('list'), 0, self.output.getvalue())
+        self.assertEqual(self.output.getvalue().strip(), 'No sandboxes owned by this checkout.')
+        self.calls.clear()
+        self.assertEqual(self.cli('list', 'agent01'), 1)
+        self.assertIn('Use list without arguments.', self.output.getvalue())
+        self.assertEqual(self.calls, [])
 
     def test_build_preserves_extra_arguments_and_native_exit_code(self):
         self.assertEqual(self.cli('build', '--build-arg', 'VALUE=a b"c'), 0, self.output.getvalue())

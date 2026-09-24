@@ -19,13 +19,15 @@ import windows_lifecycle
 import windows_commands
 import windows_update
 import grammar
+import sandboxes
 import update
 
 PROJECT = Path(__file__).resolve().parents[2]
 HELP = '''Usage: ./sandbox.ps1 NAME COMMAND [SUBCOMMAND] [PARAMETERS]
-Only build and update --all run without a sandbox NAME.
+Only build, list and update --all run without a sandbox NAME.
 
   ./sandbox.ps1 build [additional podman build arguments]
+  ./sandbox.ps1 list
   ./sandbox.ps1 update --all [--no-build] [--capabilities podman|none]
   ./sandbox.ps1 NAME update [--no-build] [--capabilities podman|none]
   ./sandbox.ps1 NAME up [WORKSPACE] --agents LIST [--tools LIST] [--ssh-port PORT]
@@ -218,8 +220,10 @@ def main(args, *, runner=subprocess.run):
         if args[0] == 'help':
             print(HELP)
             return 0
-        if args[0] not in ('build', 'up', 'ssh-config', 'update', *windows_lifecycle.COMMANDS, *windows_commands.COMMANDS):
+        if args[0] not in ('build', 'list', 'up', 'ssh-config', 'update', *windows_lifecycle.COMMANDS, *windows_commands.COMMANDS):
             raise ValueError('Unknown command. Run ./sandbox.ps1 --help.')
+        if args[0] == 'list' and len(args) != 1:
+            raise ValueError('Use list without arguments.')
         update_options = update.parse_args(args[1:], prog='./sandbox.ps1') if args[0] == 'update' else None
         if update_options is not None:
             for name in update_options.names:
@@ -234,6 +238,11 @@ def main(args, *, runner=subprocess.run):
         project = checkout_identity(PROJECT)
         runtime = Runtime(runner)
         runtime.preflight()
+        if args[0] == 'list':
+            def runner(*command, capture=False, check=True):
+                return runtime.run(*command, capture=capture, allowed=(0,) if check else tuple(range(256)))
+            print(sandboxes.render(sandboxes.sandboxes(project, runner)))
+            return 0
         if command is not None:
             windows_commands.execute(runtime, project, command)
             return 0

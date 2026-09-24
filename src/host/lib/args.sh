@@ -5,9 +5,10 @@ usage() {
 Windows PowerShell commands: use ./sandbox.ps1; see docs/QUICKGUIDE-WINDOWS.md.
 
 Usage: ./sandbox NAME COMMAND [SUBCOMMAND] [PARAMETERS]
-Only build and update --all run without a sandbox NAME.
+Only build, list and update --all run without a sandbox NAME.
 
   ./sandbox build [additional podman build arguments]
+  ./sandbox list                           # sandboxes owned by this checkout
   ./sandbox update --all [--no-build] [--capabilities LIST]
                                            # rebuild image and recreate every sandbox
   ./sandbox NAME update [--no-build] [--capabilities LIST]
@@ -93,6 +94,11 @@ parse_cli_args() {
     shift
     if [[ $action == update ]]; then
         CLI_ARGS=("$@")
+        return
+    fi
+    if [[ $action == list ]]; then
+        [[ $# -eq 0 ]] || fail 'Usage: ./sandbox list'
+        CLI_ARGS=()
         return
     fi
     selection=()

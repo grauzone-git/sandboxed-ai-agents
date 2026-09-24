@@ -83,7 +83,7 @@ else process.exit(1); // No image/container: stop before creation in positive pa
     [['update'], './sandbox update --all'],
     [['demo'], './sandbox NAME COMMAND'],
     [['demo', 'build'], './sandbox build'],
-    [['demo', 'list'], 'Unknown command: list'],
+    [['demo', 'list'], './sandbox list does not take a sandbox name'],
     [['demo', 'restart', '--volumes'], './sandbox NAME restart [--ssh-config]'],
     [['demo', 'update', '--all'], './sandbox update --all'],
     [['demo', 'update', 'other'], 'Update one sandbox per command: ./sandbox demo update'],
@@ -92,6 +92,7 @@ else process.exit(1); // No image/container: stop before creation in positive pa
     [['demo', 'azdo', '--pat-env', '--', 'devops', 'project', 'list'], './sandbox demo tools setup azdo --persist'],
     [['shell', 'up', '--agents', 'codex'], "'shell' is a command"],
     [['build', 'up', '--agents', 'codex'], "'build' is a command"],
+    [['list', 'up', '--agents', 'codex'], "'list' is a command"],
     [['-x', 'up'], 'Use an alphanumeric container name'],
   ]) {
     const result = cli(args);

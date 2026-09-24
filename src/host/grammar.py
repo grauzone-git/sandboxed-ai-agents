@@ -3,10 +3,10 @@ import re
 import shlex
 import sys
 
-# LAUNCHER NAME COMMAND [SUBCOMMAND] [PARAMETERS]; only build and update --all
+# LAUNCHER NAME COMMAND [SUBCOMMAND] [PARAMETERS]; only build, list and update --all
 # omit NAME. Command names are reserved so the first argument is never ambiguous.
 HELP = ('help', '--help', '-h')
-UNNAMED_COMMANDS = ('build', 'update')
+UNNAMED_COMMANDS = ('build', 'list', 'update')
 SESSIONS = ('copilot', 'claude', 'codex', 'hermes', 'opencode', 'deepseek', 't3')
 NAMED_COMMANDS = ('up', 'start', 'stop', 'restart', 'remove', 'shell', 'ssh-config', 'check', 'check-full',
            'fingerprint', 'agents', 'tools', 'run', 'tool', 'service', 'forward', 'update', *SESSIONS)
@@ -42,7 +42,7 @@ def normalize(args, prog):
     first, rest = args[0], list(args[1:])
     if first in RESERVED and rest and rest[0] in NAMED_COMMANDS:
         raise ValueError(f"'{first}' is a command name and cannot be used as a sandbox name.")
-    if first == 'build':
+    if first in ('build', 'list'):
         return [first, *rest]
     if first == 'update':
         if '--all' in rest or any(arg in HELP for arg in rest):
@@ -69,7 +69,7 @@ def normalize(args, prog):
         return ['help']
     if command == 'azdo':
         raise removed_azdo(prog, name)
-    if command == 'build':
+    if command in ('build', 'list'):
         raise ValueError(f'{command_line(prog, [command])} does not take a sandbox name.')
     if command == 'update' and '--all' in parameters:
         raise ValueError(f'Use {command_line(prog, ["update", "--all"])} without a sandbox name.')
