@@ -197,15 +197,15 @@ completion evidence for issues #25, #26, or #27.
 
 | Host | Cloud | Initial login, tunnel closure, restart, renewal | Recorded versions |
 |---|---|---|---|
-| Linux | AzureCloud | Passed 2026-09-24, source `79bdbc0` ([#25](https://github.com/grauzone-git/sandboxed-ai-agents/issues/25#issuecomment-5821975032)) | Recorded |
-| Native Windows | AzureCloud | Passed 2026-09-22, source `16ff140` ([#26](https://github.com/grauzone-git/sandboxed-ai-agents/issues/26)) | Recorded |
-| Linux | AzureChinaCloud | Passed 2026-09-23, source `9d6f9ea` ([#27](https://github.com/grauzone-git/sandboxed-ai-agents/issues/27#issuecomment-5789039525)) | Recorded |
-| Native Windows | AzureChinaCloud | Passed 2026-09-22, source `16ff140` ([#27](https://github.com/grauzone-git/sandboxed-ai-agents/issues/27#issuecomment-5782732905)) | Recorded |
+| Linux | AzureCloud | Passed 2026-09-24 ([#25](https://github.com/grauzone-git/sandboxed-ai-agents/issues/25#issuecomment-5822999605)) | Recorded |
+| Native Windows | AzureCloud | Passed 2026-09-24 ([#26](https://github.com/grauzone-git/sandboxed-ai-agents/issues/26#issuecomment-5823379142)) | Recorded |
+| Linux | AzureChinaCloud | Passed 2026-09-24 ([#27](https://github.com/grauzone-git/sandboxed-ai-agents/issues/27#issuecomment-5823262476)) | Recorded |
+| Native Windows | AzureChinaCloud | Passed 2026-09-24 ([#27](https://github.com/grauzone-git/sandboxed-ai-agents/issues/27#issuecomment-5823418532)) | Recorded |
 
-All four runs used image `102276b` and browser login. Device-code login is
-untested because the available tenants allow browser sign-in only. Native
-Azure DevOps credential storage failed in every run; the fix in `542da81`
-still needs a live check with a rebuilt image.
+All four runs used source `dbdaf98`, image `542da81`, and browser login, and
+passed every runner check including native Azure DevOps credential storage.
+Device-code login is untested because the available tenants allow browser
+sign-in only.
 
 1. Record UTC date, host OS, Podman client/server versions, OpenSSH version, and
    the Azure CLI/MSAL versions in the rebuilt image. On Windows also record
