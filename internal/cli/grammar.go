@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-var namedCommands = strings.Fields("up start stop restart remove shell ssh-config check check-full fingerprint agents tools run tool service forward update adopt copilot claude codex hermes opencode deepseek t3")
+var namedCommands = append(strings.Fields("up start stop restart remove shell ssh-config check check-full fingerprint agents tools run tool service forward update adopt"), sessionNames()...)
 var unnamedCommands = []string{"version", "build", "list", "update", "adopt"}
 var namePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]*$`)
 

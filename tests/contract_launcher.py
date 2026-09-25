@@ -48,13 +48,20 @@ elif sys.argv[1] != 'ps': sys.exit('Unexpected ownership probe command')
         return owners.pop()
 
 
-def describe_launcher(checkout, env):
+def describe_launcher(checkout, env, details=False):
     command = launcher_command(checkout)
-    return {'command': command, 'owner': discover_owner(command, checkout, env)}
+    description = {'command': command, 'owner': discover_owner(command, checkout, env)}
+    if details:
+        version = subprocess.run([*command, 'version'], cwd=checkout, env=env,
+                                 text=True, capture_output=True, timeout=20)
+        description['executable'] = (version.returncode == 0 and
+                                     version.stdout.startswith('sandboxed-agents version '))
+    return description
 
 
 if __name__ == '__main__':
     try:
-        print(json.dumps(describe_launcher(Path(sys.argv[1]).resolve(), os.environ)))
+        print(json.dumps(describe_launcher(Path(sys.argv[1]).resolve(), os.environ,
+                                           details='--details' in sys.argv[2:])))
     except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired) as error:
         sys.exit(f'Error: {error}')

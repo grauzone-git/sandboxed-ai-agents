@@ -134,7 +134,8 @@ The scripts have no third-party dependencies. The Go executable permits the
 standard library and `golang.org/x/sys`. `make test` runs the script regressions
 offline against fake Podman executables and isolated home directories;
 `go test ./...` runs the executable tests. GitHub Actions runs the script suite,
-Go tests, and executable list contract, and cross-builds the supported targets.
+Go tests, executable list contract, and executable management subset, and
+cross-builds the supported targets.
 
 Python is standard library only and targets 3.9. Bash is `set -euo pipefail`
 with a shared `fail` helper. JavaScript is CommonJS with factory functions that

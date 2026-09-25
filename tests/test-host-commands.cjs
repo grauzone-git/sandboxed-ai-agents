@@ -12,50 +12,7 @@ function write(file, value, mode = 0o600) {
   fs.writeFileSync(file, value, { mode });
 }
 
-async function test() {
-  // Mock the host transport, recording whether rejected commands touch Podman.
-  const checkout = path.join(fixture, 'project');
-  const hostHome = path.join(fixture, 'host-home');
-  const sshConfig = path.join(hostHome, '.ssh/sanboxed-agents/demo/demo.conf');
-  const mockBin = path.join(fixture, 'bin');
-  const transportLog = path.join(fixture, 'transport.jsonl');
-  write(path.join(checkout, 'sandbox'), fs.readFileSync(path.join(project, 'sandbox')), 0o755);
-  fs.cpSync(path.join(project, 'src'), path.join(checkout, 'src'), { recursive: true });
-  write(sshConfig, '# Test SSH configuration\n');
-  write(path.join(mockBin, 'id'), '#!/bin/sh\nprintf "1000\\n"\n', 0o755);
-  const recorder = `#!/usr/bin/env node
-const fs = require('node:fs');
-const args = process.argv.slice(2);
-fs.appendFileSync(process.env.TEST_TRANSPORT_LOG, JSON.stringify({tool: require('node:path').basename(process.argv[1]), args}) + '\\n');
-`;
-  write(path.join(mockBin, 'podman'), recorder + `
-if (args[0] === 'info') console.log('true');
-else if (args[0] === 'inspect') console.log(process.env.TEST_FOREIGN_OWNER || process.env.TEST_OWNER);
-else if (args[0] === 'exec' && (args.includes('login') || args.includes('setup'))) process.exit(Number(process.env.TEST_LOGIN_EXIT || 0));
-else if (args[0] === 'exec' && args.includes('service') && args.at(-1) === 'start') process.exit(0);
-else if (args[0] === 'restart') process.exit(0);
-else if (process.env.TEST_REMOVE && ['stop', 'rm'].includes(args[0])) process.exit(args[0] === process.env.TEST_REMOVE_FAIL ? 1 : 0);
-else if (process.env.TEST_REMOVE && args[0] === 'volume' && args[1] === 'inspect') console.log(process.env.TEST_FOREIGN_VOLUME && args.at(-1).endsWith('-sshd') ? '/foreign' : process.env.TEST_OWNER);
-else if (process.env.TEST_REMOVE && args[0] === 'volume' && args[1] === 'exists' && args.at(-1).endsWith('-workspace')) process.exit(1);
-else if (process.env.TEST_REMOVE && args[0] === 'volume' && ['exists', 'rm'].includes(args[1])) process.exit(args[1] === 'rm' && process.env.TEST_VOLUME_REMOVE_FAIL ? 1 : 0);
-else process.exit(1); // No image/container: stop before creation in positive parsing tests.
-`, 0o755);
-  write(path.join(mockBin, 'ssh'), recorder + '\nif (process.env.TEST_START_FAILED && args.at(-1) === "-s") process.exit(1);\n', 0o755);
-  const env = {
-    ...process.env, HOME: hostHome, USERPROFILE: hostHome,
-    XDG_STATE_HOME: path.join(fixture, 'state'), LOCALAPPDATA: path.join(fixture, 'local'),
-    PATH: `${mockBin}${path.delimiter}${process.env.PATH}`, TEST_TRANSPORT_LOG: transportLog,
-  };
-  const discovery = spawnSync(process.env.PYTHON || 'python3', ['-B', path.join(__dirname, 'contract_launcher.py'), checkout], {
-    env, encoding: 'utf8',
-  });
-  assert.equal(discovery.status, 0, discovery.stderr);
-  const launcher = JSON.parse(discovery.stdout);
-  env.TEST_OWNER = launcher.owner;
-  const cli = (args, extraEnv = {}) => spawnSync(launcher.command[0], [...launcher.command.slice(1), ...args], {
-    cwd: checkout, encoding: 'utf8', env: { ...env, ...extraEnv },
-  });
-  for (const args of [
+const invalidArguments = [
     ['demo', 'up'], ['demo', 'up', '--agents', 'none'], ['demo', 'up', '--agents', ''],
     ['demo', 'up', '--agents', 'codex,unknown'], ['demo', 'up', '--agents'],
     ['demo', 'up', '--tools', 'tokentracker'],
@@ -79,13 +36,9 @@ else process.exit(1); // No image/container: stop before creation in positive pa
     ['demo', 'tools', 'setup', 't3', 'extra'], ['demo', 'tools', 'setup', 'azdo', 'extra'], ['demo', 'agents', 'setup', 'azdo'], ['demo', 'agents', 'setup', 't3'],
     ['remove'], ['demo', 'remove', '--unknown'], ['demo', 'remove', '--volumes', '--volumes'], ['demo', 'remove', '--ssh-config', '--ssh-config'],
     ...Object.keys(catalog).map(id => [id]),
-  ]) {
-    assert.notEqual(cli(args).status, 0, JSON.stringify(args));
-    assert.equal(fs.existsSync(transportLog), false, 'Rejected input reached Podman/SSH');
-  }
-  // Old command-first forms, the removed azdo command, and reserved names fail
-  // before Podman with a hint that uses the name-first grammar.
-  for (const [args, hint] of [
+];
+
+const grammarCases = [
     [['up', 'demo', '--agents', 'codex'], './sandbox demo up --agents codex'],
     [['agents', 'demo', 'login', 'claude'], './sandbox demo agents login claude'],
     [['shell', 'demo'], './sandbox demo shell'],
@@ -105,7 +58,71 @@ else process.exit(1); // No image/container: stop before creation in positive pa
     [['build', 'up', '--agents', 'codex'], "'build' is a command"],
     [['list', 'up', '--agents', 'codex'], "'list' is a command"],
     [['-x', 'up'], 'Use an alphanumeric container name'],
-  ]) {
+];
+
+async function test() {
+  // Mock the host transport, recording whether rejected commands touch Podman.
+  const checkout = path.join(fixture, 'project');
+  const hostHome = path.join(fixture, 'host-home');
+  const sshConfig = path.join(hostHome, '.ssh/sanboxed-agents/demo/demo.conf');
+  const mockBin = path.join(fixture, 'bin');
+  const transportLog = path.join(fixture, 'transport.jsonl');
+  write(path.join(checkout, 'sandbox'), fs.readFileSync(path.join(project, 'sandbox')), 0o755);
+  fs.cpSync(path.join(project, 'src'), path.join(checkout, 'src'), { recursive: true });
+  write(sshConfig, '# Test SSH configuration\n');
+  const writeFake = (name, source, node = true) => {
+    fs.mkdirSync(mockBin, { recursive: true });
+    const result = spawnSync(process.env.PYTHON || 'python3', ['-B', path.join(__dirname, 'native_fakes.py'), mockBin, name,
+      ...(node ? ['--node', process.execPath] : [])], {input: source, encoding: 'utf8'});
+    assert.equal(result.status, 0, result.stderr);
+  };
+  writeFake('id', '#!/usr/bin/env python3\nprint(1000)\n', false);
+  const recorder = `#!/usr/bin/env node
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.TEST_TRANSPORT_LOG, JSON.stringify({tool: require('node:path').basename(process.argv[1]).replace(/\\.cjs$/, ''), args}) + '\\n');
+`;
+  writeFake('podman', recorder + `
+if (args[0] === 'info') console.log('true');
+else if (args[0] === 'inspect') console.log(process.env.TEST_FOREIGN_OWNER || process.env.TEST_OWNER);
+else if (args[0] === 'exec' && process.env.TEST_MANAGEMENT) { console.log('manager output'); console.error('manager diagnostic'); process.exit(Number(process.env.TEST_EXEC_EXIT || 0)); }
+else if (args[0] === 'exec' && (args.includes('login') || args.includes('setup'))) process.exit(Number(process.env.TEST_LOGIN_EXIT || 0));
+else if (args[0] === 'exec' && args.includes('service') && args.at(-1) === 'start') process.exit(0);
+else if (args[0] === 'restart') process.exit(0);
+else if (process.env.TEST_REMOVE && ['stop', 'rm'].includes(args[0])) process.exit(args[0] === process.env.TEST_REMOVE_FAIL ? 1 : 0);
+else if (process.env.TEST_REMOVE && args[0] === 'volume' && args[1] === 'inspect') console.log(process.env.TEST_FOREIGN_VOLUME && args.at(-1).endsWith('-sshd') ? '/foreign' : process.env.TEST_OWNER);
+else if (process.env.TEST_REMOVE && args[0] === 'volume' && args[1] === 'exists' && args.at(-1).endsWith('-workspace')) process.exit(1);
+else if (process.env.TEST_REMOVE && args[0] === 'volume' && ['exists', 'rm'].includes(args[1])) process.exit(args[1] === 'rm' && process.env.TEST_VOLUME_REMOVE_FAIL ? 1 : 0);
+else process.exit(1); // No image/container: stop before creation in positive parsing tests.
+`);
+  writeFake('ssh', recorder + '\nif (process.env.TEST_START_FAILED && args.at(-1) === "-s") process.exit(1);\n');
+  const env = {
+    ...process.env, HOME: hostHome, USERPROFILE: hostHome,
+    XDG_STATE_HOME: path.join(fixture, 'state'), LOCALAPPDATA: path.join(fixture, 'local'),
+    PATH: `${mockBin}${path.delimiter}${process.env.PATH}`, TEST_TRANSPORT_LOG: transportLog,
+  };
+  const discovery = spawnSync(process.env.PYTHON || 'python3', ['-B', path.join(__dirname, 'contract_launcher.py'), checkout, '--details'], {
+    env, encoding: 'utf8',
+  });
+  assert.equal(discovery.status, 0, discovery.stderr);
+  const launcher = JSON.parse(discovery.stdout);
+  env.TEST_OWNER = launcher.owner;
+  const cli = (args, extraEnv = {}) => spawnSync(launcher.command[0], [...launcher.command.slice(1), ...args], {
+    cwd: checkout, encoding: 'utf8', env: { ...env, ...extraEnv },
+  });
+  if (launcher.executable) {
+    if (process.env.SANDBOX_TEST_CONTRACT_SLICE === 'management') {
+      return require('./host-binary-management.cjs')({hostHome, transportLog, env, cli});
+    }
+    throw new Error('This executable preview supports SANDBOX_TEST_CONTRACT_SLICE=management.');
+  }
+  for (const args of invalidArguments) {
+    assert.notEqual(cli(args).status, 0, JSON.stringify(args));
+    assert.equal(fs.existsSync(transportLog), false, 'Rejected input reached Podman/SSH');
+  }
+  // Old command-first forms, the removed azdo command, and reserved names fail
+  // before Podman with a hint that uses the name-first grammar.
+  for (const [args, hint] of grammarCases) {
     const result = cli(args);
     assert.notEqual(result.status, 0, JSON.stringify(args));
     assert.ok(result.stderr.includes(hint), `${JSON.stringify(args)}: ${result.stderr}`);

@@ -2,9 +2,11 @@
 
 The Go controller is being implemented under
 [#36](https://github.com/grauzone-git/sandboxed-ai-agents/issues/36). This preview
-implements `version`, `build`, `list`, and sandbox lifecycle with optional workspace binds. Use the
-existing scripts for agent/tool management and updates until their
-executable issues land.
+implements `version`, `build`, `list`, sandbox lifecycle with optional workspace
+binds, and, from #46, agent and tool management and sessions. At this snapshot,
+updates, adoption, tools setup, services, and forwarding remain upcoming
+executable commands under #45, #47, and #48. Use the existing scripts for them
+until those issues land.
 
 Build with Go 1.23 or later:
 
@@ -37,10 +39,26 @@ Commands such as `build`, `list`, and `version` take no sandbox name; command
 names are reserved. Unsupported commands fail with a preview limitation message.
 
 Run `go test ./...` for the executable's offline public CLI tests. The
-[shared host contract](HOST-CONTRACT.md) also runs list scenarios against it.
-CI runs Go tests and list contracts on Linux and Windows and cross-builds
-linux/amd64, linux/arm64, and windows/amd64. No live Podman execution is implied
-by these offline tests.
+[shared host contract](HOST-CONTRACT.md) also runs its list scenarios and a
+management subset against it:
+
+```sh
+export SANDBOX_TEST_LAUNCHER="[\"$PWD/sandboxed-agents\"]"
+SANDBOX_TEST_CONTRACT_SLICE=management node tests/test-host-commands.cjs
+python3 -B tests/test-list.py
+```
+
+The management subset covers sessions, login, agent and tool management, `run`
+and `tool`, rejected input, literal arguments, exit status and output, the exact
+fake Podman calls, and unchanged host SSH and controller state. See the host
+contract for details and the Windows form. It does not establish full parity
+with the script contract; the remaining suites follow in #47, #48, and #50.
+
+CI runs Go tests, the list contract, and the management subset on Linux and
+Windows and cross-builds linux/amd64, linux/arm64, and windows/amd64. No live
+Podman execution is implied by these offline tests. Supported targets are
+linux/amd64, linux/arm64, and Windows 11 windows/amd64. macOS and BSD are not
+targets, and generic Unix code or tests do not imply support for them.
 
 ## Create and manage a sandbox
 
@@ -174,3 +192,51 @@ successful container removal. It removes the shared Include only when no managed
 configuration remains. Other sandbox keys, unrelated SSH settings, and unknown
 files are retained. Unsafe symlinks or reparse points in managed paths block SSH
 setup and removal before a container is stopped.
+
+## Agent and tool commands
+
+Manage the selection saved inside a sandbox through its bundled manager:
+
+```sh
+sandboxed-agents agent01 agents list
+sandboxed-agents agent01 agents check
+sandboxed-agents agent01 agents set codex,claude
+sandboxed-agents agent01 agents enable hermes
+sandboxed-agents agent01 agents disable claude
+sandboxed-agents agent01 agents update all
+sandboxed-agents agent01 tools enable t3
+sandboxed-agents agent01 tools update all
+```
+
+Both `agents` and `tools` accept `list`, `check`, `set`, `enable`, `disable`, and
+`update`. Omit the operation to list. Selection names and version pins come from
+the embedded catalogs; invalid selections fail before contacting Podman.
+`update all` updates the enabled selection, without enabling other entries.
+`set none` disables the selection. The manager enforces tool dependencies and
+keeps cached credentials when an entry is disabled.
+
+Log in through the sandbox's terminal:
+
+```sh
+sandboxed-agents agent01 agents login codex
+sandboxed-agents agent01 tools login github
+```
+
+Managed agent login supports `codex`, `claude`, `copilot`, `opencode`, and
+`hermes`. GitHub login uses the in-container GitHub CLI. Credentials stay in the
+sandbox home volume. Follow the provider prompts; host SSH setup is not needed.
+
+Run an enabled executable with arguments, or attach its persistent session:
+
+```sh
+sandboxed-agents agent01 run codex --version
+sandboxed-agents agent01 tool t3 --help
+sandboxed-agents agent01 codex
+```
+
+Session shortcuts are `copilot`, `claude`, `codex`, `hermes`, `opencode`,
+`deepseek`, and `t3`; they accept no extra arguments. `t3` uses the tool manager,
+while the other shortcuts use the agent manager. All commands enforce sandbox
+ownership and use `podman exec` as the unprivileged agent in `/workspace`.
+Interactive commands preserve stdin and allocate a TTY when both stdin and
+stdout are terminals. Arguments and exit status pass through to the manager.

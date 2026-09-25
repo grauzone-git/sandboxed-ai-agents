@@ -35,6 +35,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.9'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - run: go test ./...
       - name: Check native Windows script transport during handover
         if: runner.os == 'Windows'
@@ -43,7 +46,7 @@ jobs:
         run: |
           go build -o sandboxed-agents.exe ./cmd/sandboxed-agents
           go build -o fake-command.exe ./tests/fake-command
-      - name: Run shared list contract against executable
+      - name: Run shared list and management contracts against executable
         shell: python
         run: |
           import json, os, pathlib, subprocess, sys
@@ -52,6 +55,9 @@ jobs:
           env['SANDBOX_TEST_LAUNCHER'] = json.dumps([str(root / 'sandboxed-agents.exe')])
           env['SANDBOX_TEST_FAKE_COMMAND'] = str(root / 'fake-command.exe')
           subprocess.run([sys.executable, '-B', 'tests/test-list.py'], env=env, check=True)
+          env['PYTHON'] = sys.executable
+          env['SANDBOX_TEST_CONTRACT_SLICE'] = 'management'
+          subprocess.run(['node', 'tests/test-host-commands.cjs'], env=env, check=True)
 
   cross-build:
     runs-on: ubuntu-latest

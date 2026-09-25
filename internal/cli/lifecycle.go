@@ -78,9 +78,7 @@ func lifecycle(command, name string, args []string) error {
 
 func interactiveArgs() []string {
 	args := []string{"-i"}
-	input, errIn := os.Stdin.Stat()
-	output, errOut := os.Stdout.Stat()
-	if errIn == nil && errOut == nil && input.Mode()&os.ModeCharDevice != 0 && output.Mode()&os.ModeCharDevice != 0 {
+	if terminalAvailable(os.Stdin) && terminalAvailable(os.Stdout) {
 		args = append(args, "-t")
 	}
 	return args
@@ -183,7 +181,8 @@ func parseCreate(args []string) (createOptions, error) {
 }
 
 type catalogEntry struct {
-	Agent string `json:"agent"`
+	Agent string   `json:"agent"`
+	Login []string `json:"login"`
 }
 
 func readCatalog(kind string) (map[string]catalogEntry, error) {
@@ -291,8 +290,16 @@ func sandboxVolumes(name string) []string {
 	return []string{name + "-home", name + "-sshd", name + "-workspace"}
 }
 func manager(name, kind string, args ...string) error {
-	command := []string{"exec", "--user", "1000:1000", "--workdir", "/workspace", name, "/usr/local/bin/sandbox-" + kind}
-	return podman(append(command, args...)...)
+	return podman(managerCommand(name, kind, false, args...)...)
+}
+
+func managerCommand(name, kind string, interactive bool, args ...string) []string {
+	command := []string{"exec"}
+	if interactive {
+		command = append(command, interactiveArgs()...)
+	}
+	command = append(command, "--user", "1000:1000", "--workdir", "/workspace", name, "/usr/local/bin/sandbox-"+kind)
+	return append(command, args...)
 }
 func createSandbox(name string, options createOptions) error {
 	exists, err := resourceExists("container", name)

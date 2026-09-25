@@ -54,3 +54,30 @@ def write_fake(directory, name, source):
     command = directory / f'{name}.exe'
     shutil.copy2(relay, command)
     return command
+
+
+def write_node_fake(directory, name, source, node):
+    if os.name != 'nt':
+        return write_fake(directory, name, source)
+    script = Path(directory) / f'{name}.cjs'
+    script.write_text(source, encoding='utf-8')
+    relay = ('import subprocess, sys\n'
+             f'sys.exit(subprocess.call([{node!r}, {str(script)!r}, *sys.argv[1:]]))\n')
+    return write_fake(directory, name, relay)
+
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('directory', type=Path)
+    parser.add_argument('name')
+    parser.add_argument('--node')
+    args = parser.parse_args()
+    try:
+        source = sys.stdin.read()
+        if args.node:
+            write_node_fake(args.directory, args.name, source, args.node)
+        else:
+            write_fake(args.directory, args.name, source)
+    except (OSError, ValueError) as error:
+        sys.exit(f'Error: {error}')
