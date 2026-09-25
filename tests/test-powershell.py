@@ -22,15 +22,19 @@ class PowerShellTests(unittest.TestCase):
             (host / 'windows_cli.py').write_text(
                 'import sys\nprint("Finding your release...\\n\\nInstalled", file=sys.stderr)\n'
                 'sys.exit(int(sys.argv[-1]))\n')
-            for code in (0, 37):
-                with self.subTest(code=code):
-                    result = subprocess.run(
-                        ['pwsh', '-NoProfile', '-File', str(root / 'sandbox.ps1'), 'test', 'agents', str(code)],
-                        env={**os.environ, 'SANDBOX_PYTHON': sys.executable, 'NO_COLOR': '1'},
-                        capture_output=True, text=True, timeout=30)
-                    self.assertEqual(result.returncode, code, result.stderr)
-                    self.assertEqual(result.stdout, '')
-                    self.assertEqual(result.stderr, 'Finding your release...\n\nInstalled\n')
+            for working in (PROJECT, root):
+                for code in (0, 37):
+                    with self.subTest(code=code, cwd=working):
+                        result = subprocess.run(
+                            ['pwsh', '-NoProfile', '-File', str(root / 'sandbox.ps1'), 'test', 'agents', str(code)],
+                            env={**os.environ, 'SANDBOX_PYTHON': sys.executable, 'NO_COLOR': '1'},
+                            cwd=working, capture_output=True, text=True, timeout=30)
+                        self.assertEqual(result.returncode, code, result.stderr)
+                        self.assertEqual(result.stdout, '')
+                        # PowerShell can omit empty ErrorRecords while rendering.
+                        # Exact stream preservation is checked through 2>&1 below.
+                        self.assertIn(result.stderr, ('Finding your release...\n\nInstalled\n',
+                                                     'Finding your release...\nInstalled\n'))
 
     def test_arguments_and_native_failure_survive_the_entry_point(self):
         with tempfile.TemporaryDirectory(prefix='sandbox powershell ') as directory:
@@ -56,7 +60,8 @@ class PowerShellTests(unittest.TestCase):
             host = root / 'src/host'
             host.mkdir(parents=True)
             (host / 'windows_cli.py').write_text(
-                'import sys\nprint("copilot no 1.0.86")\nprint("diagnostic", file=sys.stderr)\nsys.exit(37)\n')
+                'import sys\nprint("copilot no 1.0.86")\n'
+                'print("first diagnostic\\n\\nlast diagnostic", file=sys.stderr)\nsys.exit(37)\n')
             script = root / 'invoke.ps1'
             script.write_text(
                 "$lines = @(& (Join-Path $PSScriptRoot 'sandbox.ps1') test agents list 2>&1)\n"
@@ -67,7 +72,9 @@ class PowerShellTests(unittest.TestCase):
                                     capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stderr)
             payload = json.loads(result.stdout)
-            self.assertCountEqual(payload['lines'], ['copilot no 1.0.86', 'diagnostic'])
+            self.assertCountEqual(payload['lines'], ['copilot no 1.0.86', 'first diagnostic', '', 'last diagnostic'])
+            self.assertEqual([line for line in payload['lines'] if line != 'copilot no 1.0.86'],
+                             ['first diagnostic', '', 'last diagnostic'])
             self.assertEqual(payload['code'], 37)
             self.assertEqual(result.stderr, '')
 
