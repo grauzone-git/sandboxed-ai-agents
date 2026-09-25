@@ -3,10 +3,10 @@
 The Go controller is being implemented under
 [#36](https://github.com/grauzone-git/sandboxed-ai-agents/issues/36). This preview
 implements `version`, `build`, `list`, sandbox lifecycle with optional workspace
-binds, and, from #46, agent and tool management and sessions. At this snapshot,
-updates, adoption, tools setup, services, and forwarding remain upcoming
-executable commands under #45, #47, and #48. Use the existing scripts for them
-until those issues land.
+binds, agent and tool management and sessions from #46, and sandbox image
+updates from #45. At this snapshot, adoption, tools setup, services, and
+forwarding remain upcoming executable commands under #47 and #48. Use the
+existing scripts for them until those issues land.
 
 Build with Go 1.23 or later:
 
@@ -240,3 +240,56 @@ while the other shortcuts use the agent manager. All commands enforce sandbox
 ownership and use `podman exec` as the unprivileged agent in `/workspace`.
 Interactive commands preserve stdin and allocate a TTY when both stdin and
 stdout are terminals. Arguments and exit status pass through to the manager.
+
+## Update sandbox images
+
+```sh
+sandboxed-agents agent01 update
+sandboxed-agents update --all --no-build
+```
+
+Name one sandbox, or pass `--all` without a name to select every container
+owned by `SANDBOX_CONTROLLER`. `--all` reports and skips retained update
+backups: containers named `NAME-update-backup-…` that still mount the original
+sandbox's home and SSH server volumes. A sandbox whose name only looks similar
+is updated normally. Update snapshots and validates every selected sandbox
+before rebuilding the bundled image without the build cache. Validation checks
+ownership, state, the loopback SSH port mapping, and the expected mounts and
+volume owners; a bound workspace directory must still exist. On Windows, a WSL
+`/mnt/DRIVE/...` bind source is translated back to its Windows path and checked
+by the same workspace protection. Binds under a custom WSL automount root are
+rejected. `--no-build` uses the current `SANDBOX_IMAGE`. The controller freezes
+its image ID and prepares any nested Podman images before stopping containers.
+`--capabilities podman|none` overrides the saved capability; otherwise each
+sandbox keeps its existing selection.
+
+Sandboxes are replaced one at a time. Each is checked again before replacement,
+stopped if running, and renamed to a backup. Its replacement uses the same
+workspace volume or bind directory, home and SSH server volumes, port, CPU,
+memory, process and shared-memory limits, and the selected capability. The
+controller starts it, waits up to 15 seconds for its SSH server to become
+ready, and boots the saved agent and tool selections. Output from failed
+readiness checks is suppressed while retrying; if the wait times out, the error
+reports the last check's failure. An interrupt ends the wait promptly, is
+reported as an interruption rather than a timeout, and rolls back. A sandbox
+that was stopped before the update is stopped again afterwards. SSH keys and
+host configuration are retained.
+
+A failure or interruption during replacement removes only the new container,
+restores the original name, and restarts the original if it was running. Update
+never calls the normal removal path or deletes volumes. If creation fails or is
+interrupted before Podman reports a container ID, rollback looks up the
+container now holding the sandbox name. It removes that container only if it is
+owned by this configuration, has a valid container ID, and carries this update's
+unique transaction label; removal then targets that confirmed ID, not the name.
+If another container holds the name, the backup is retained and the error
+identifies it. If backup cleanup fails after successful replacement, the healthy
+replacement stays in place and the error identifies the stopped backup to
+inspect. If rollback itself fails, the error identifies the original container
+and backup; their volumes and SSH files remain untouched. With `--all`, the
+first failure stops the run: sandboxes already replaced keep their update, and
+the remaining ones are not changed.
+
+`list` adds `(outdated)` to the state of a sandbox whose version label is older
+than the executable. Unknown or missing version labels are not guessed. Listing
+never updates a sandbox automatically.

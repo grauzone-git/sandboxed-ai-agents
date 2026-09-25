@@ -6,6 +6,7 @@ import (
 	"os"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 )
@@ -62,6 +63,9 @@ func list() error {
 				}
 			}
 		}
+		if olderVersion(info.Config.Labels[versionLabel], Version) {
+			row[1] += " (outdated)"
+		}
 		rows = append(rows, row)
 	}
 	if len(rows) == 0 {
@@ -105,4 +109,51 @@ func enabledAgents(name string) string {
 		return "none"
 	}
 	return strings.Join(names, ",")
+}
+
+var versionPattern = regexp.MustCompile(`^v?([0-9]+)\.([0-9]+)\.([0-9]+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$`)
+
+func olderVersion(installed, current string) bool {
+	left, right := versionPattern.FindStringSubmatch(installed), versionPattern.FindStringSubmatch(current)
+	if left == nil || right == nil {
+		return false
+	}
+	for i := 1; i <= 3; i++ {
+		a, errA := strconv.ParseUint(left[i], 10, 64)
+		b, errB := strconv.ParseUint(right[i], 10, 64)
+		if errA != nil || errB != nil {
+			return false
+		}
+		if a != b {
+			return a < b
+		}
+	}
+	if left[4] == right[4] {
+		return false
+	}
+	if left[4] == "" {
+		return false
+	}
+	if right[4] == "" {
+		return true
+	}
+	a, b := strings.Split(left[4], "."), strings.Split(right[4], ".")
+	for i := 0; i < len(a) && i < len(b); i++ {
+		if a[i] == b[i] {
+			continue
+		}
+		an, ae := strconv.ParseUint(a[i], 10, 64)
+		bn, be := strconv.ParseUint(b[i], 10, 64)
+		if ae == nil && be == nil {
+			return an < bn
+		}
+		if ae == nil {
+			return true
+		}
+		if be == nil {
+			return false
+		}
+		return a[i] < b[i]
+	}
+	return len(a) < len(b)
 }

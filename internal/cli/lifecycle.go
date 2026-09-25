@@ -18,8 +18,8 @@ import (
 )
 
 type createOptions struct {
-	agents, tools, port, cpus, memory, workspace, capabilities string
-	bind, sshConfig                                            bool
+	agents, tools, port, cpus, memory, pidsLimit, shmSize, workspace, capabilities string
+	bind, sshConfig                                                                bool
 }
 
 func lifecycle(command, name string, args []string) error {
@@ -92,7 +92,7 @@ func envDefault(key, fallback string) string {
 }
 
 func parseCreate(args []string) (createOptions, error) {
-	options := createOptions{capabilities: "none", port: "2222", cpus: envDefault("SANDBOX_CPUS", "4"), memory: envDefault("SANDBOX_MEMORY", "8g")}
+	options := createOptions{pidsLimit: "2048", shmSize: "1g", capabilities: "none", port: "2222", cpus: envDefault("SANDBOX_CPUS", "4"), memory: envDefault("SANDBOX_MEMORY", "8g")}
 	seen := map[string]bool{}
 	for i := 0; i < len(args); i++ {
 		flag := args[i]
@@ -494,12 +494,31 @@ func waitForEntrypoint(name string) error {
 	}
 }
 
+type containerCreation struct {
+	command, cidfile, transaction string
+}
+
 func createArguments(name string, options createOptions, image string, runtimeArgs []string) []string {
+	return containerArguments(name, options, image, runtimeArgs, containerCreation{command: "run"})
+}
+
+func containerArguments(name string, options createOptions, image string, runtimeArgs []string, creation containerCreation) []string {
 	workspace := name + "-workspace:/workspace"
 	if options.bind {
 		workspace = options.workspace + ":/workspace:Z"
 	}
-	args := []string{"run", "--detach", "--name", name, "--hostname", name, "--label", ownerLabel + "=" + owner(), "--label", versionLabel + "=" + Version, "--label", capabilitiesLabel + "=" + options.capabilities, "--userns=keep-id:uid=1000,gid=1000", "--user", "0:0"}
+	args := []string{creation.command}
+	if creation.command == "run" {
+		args = append(args, "--detach")
+	}
+	args = append(args, "--name", name, "--hostname", name, "--label", ownerLabel+"="+owner(), "--label", versionLabel+"="+Version, "--label", capabilitiesLabel+"="+options.capabilities, "--userns=keep-id:uid=1000,gid=1000", "--user", "0:0")
 	args = append(args, runtimeArgs...)
-	return append(args, "--network=pasta:--no-map-gw", "--memory="+options.memory, "--cpus="+options.cpus, "--pids-limit=2048", "--shm-size=1g", "--publish", "127.0.0.1:"+options.port+":2222", "--volume", workspace, "--volume", name+"-home:/home/agent", "--volume", name+"-sshd:/var/lib/agent-sshd", image)
+	args = append(args, "--network=pasta:--no-map-gw", "--memory="+options.memory, "--cpus="+options.cpus, "--pids-limit="+options.pidsLimit, "--shm-size="+options.shmSize, "--publish", "127.0.0.1:"+options.port+":2222", "--volume", workspace, "--volume", name+"-home:/home/agent", "--volume", name+"-sshd:/var/lib/agent-sshd")
+	if creation.transaction != "" {
+		args = append(args, "--label", updateTransactionLabel+"="+creation.transaction)
+	}
+	if creation.cidfile != "" {
+		args = append(args, "--cidfile", creation.cidfile)
+	}
+	return append(args, image)
 }
