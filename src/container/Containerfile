@@ -23,9 +23,10 @@ RUN apt-get update \
        openssh-server openssh-client git gh curl ca-certificates \
        bash tmux jq ripgrep less unzip xz-utils \
        sqlite3 procps util-linux libicu72 libssl3 libgssapi-krb5-2 libatomic1 tzdata zlib1g \
+       python3 python3-venv python3-pip \
     && case "$WITH_NATIVE_BUILD_TOOLS" in \
          0) ;; \
-         1) DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3 build-essential pkg-config ;; \
+         1) DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential pkg-config ;; \
          *) echo 'WITH_NATIVE_BUILD_TOOLS must be 0 or 1' >&2; exit 1 ;; \
        esac \
     && npm install --global --prefix /opt/agent-tools \
@@ -42,7 +43,7 @@ RUN apt-get update \
        esac \
     && rm -rf /var/lib/apt/lists/* /root/.npm /root/.cache/ms-playwright \
     && rm -f /etc/ssh/ssh_host_* \
-    && { dotnet --list-sdks; node --version; npm --version; \
+    && { dotnet --list-sdks; node --version; npm --version; python3 --version; \
          npm list --global --prefix /opt/agent-tools --depth=0; \
          if command -v microsoft-edge >/dev/null; then microsoft-edge --version; fi; } \
        > /opt/agent-tools/build-versions.txt
