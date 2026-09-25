@@ -142,13 +142,21 @@ it needs Node.js with npm, but no network access, Podman, or credentials.
 The CI workflow runs `make test` on Linux. On Linux and Windows it runs the Go
 tests, all four [shared host contract](docs/HOST-CONTRACT.md) suites against a
 natively built executable with fake commands only, and `tests/test-packages.py`
-against that same binary. It also cross-builds the supported targets. All of
-these jobs passed on the #49 commit `eed5f28` and the #50 documentation commit
-`76f2bab`; that evidence is recorded through `76f2bab`, CI on a later release
-candidate commit must be checked and recorded in #50, and per-commit results are
-in [docs/HANDOVER.md](docs/HANDOVER.md#evidence-so-far). Packaging, the release workflow, and the open release gates are
-described in [docs/RELEASES.md](docs/RELEASES.md); the release workflow has not
-run. Live Podman, SSH, and Azure validation remains a release gate.
+against that same binary. On Windows it installs the NuGet CLI first, because
+those package tests require a real `nuget pack` there. It also cross-builds the
+supported targets. All of these jobs passed on the #49 commit `eed5f28` and the
+#50 documentation commit `76f2bab`, before CI installed the NuGet CLI and ran
+the real `nuget pack` regression test. Per-commit results through `76f2bab` are
+in [docs/HANDOVER.md](docs/HANDOVER.md#evidence-so-far). CI on a later release
+candidate commit must be checked and recorded in #50.
+
+Packaging, the release workflow, and the open release gates are described in
+[docs/RELEASES.md](docs/RELEASES.md). The `v0.1.0` release run 36137613923
+built the binaries and provenance, then failed at Windows `nuget pack` with
+NU5030, so no release was published. The `v0.1.0` tag is not moved. `v0.1.1`
+replaces it and is not yet published. Manual validation remains a release gate:
+live Podman on Linux and Windows hosts, SSH, adoption, services, forwarding, and
+Azure sign-in.
 
 Python is standard library only and targets 3.9. Bash is `set -euo pipefail`
 with a shared `fail` helper. JavaScript is CommonJS with factory functions that

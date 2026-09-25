@@ -42,6 +42,8 @@ jobs:
       - name: Check native Windows script transport during handover
         if: runner.os == 'Windows'
         run: python -B tests/test-powershell.py
+      - uses: NuGet/setup-nuget@v2
+        if: runner.os == 'Windows'
       - name: Build executable and fake command relay
         run: |
           go build -o sandboxed-agents.exe ./cmd/sandboxed-agents

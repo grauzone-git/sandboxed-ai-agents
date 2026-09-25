@@ -47,7 +47,7 @@ def prepare(version, artifacts, output):
     <readme>tools/README.md</readme>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
   </metadata>
-  <files><file src="tools/**" target="tools" /></files>
+  <files><file src="tools\\**" target="tools" /></files>
 </package>
 ''')
 

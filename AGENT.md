@@ -127,7 +127,7 @@ or standalone executable.
 | `tests/test-validators.py` | Selection and mount validation |
 | `tests/test-list.py` | Listing checkout-owned sandboxes |
 | `tests/test-image-recipe.py` | Image packages, recorded versions, smoke checks |
-| `tests/test-packages.py` | `build.py` with a fake Go: toolchain pin, cleared Go env, build flags, repeated-build mismatch. `prepare.py` malformed `SHA256SUMS` rejection. Fixture packages: npm install/run/uninstall and checksum rejection; NuGet install hash check and removal of only its command (pwsh-gated); raw Windows registry `PATH` (Windows only); npm launcher protection with a real native binary (`SANDBOX_TEST_PACKAGE_BINARY`); SSH config and state retained |
+| `tests/test-packages.py` | `build.py` with a fake Go: toolchain pin, cleared Go env, build flags, repeated-build mismatch. `prepare.py` malformed `SHA256SUMS` rejection. Fixture packages: npm install/run/uninstall and checksum rejection; NuGet install hash check and removal of only its command (pwsh-gated); real `nuget pack` payload paths and bytes (required on Windows, else runs when `nuget` is on `PATH`); raw Windows registry `PATH` (Windows only); npm launcher protection with a real native binary (`SANDBOX_TEST_PACKAGE_BINARY`); SSH config and state retained |
 
 `tests/check-sources.py` parses every file under `src/`, `tests/`, and
 `packaging/`, validates the JSON catalogs, runs `tests/check-powershell.ps1`

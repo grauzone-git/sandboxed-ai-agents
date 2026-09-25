@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 
 from native_fakes import write_fake
 
@@ -51,6 +52,29 @@ class PackageTests(unittest.TestCase):
     def assertHostStateKept(self):
         self.assertEqual(self.ssh.read_text(), 'existing SSH config\n')
         self.assertEqual(self.state.read_text(), 'existing state\n')
+
+    def test_nuget_pack_contains_declared_license_readme_and_tools(self):
+        nuget = shutil.which('nuget')
+        if os.name != 'nt' and not nuget:
+            self.skipTest('NuGet CLI packaging is required by the native Windows CI job.')
+        self.assertIsNotNone(nuget, 'Native Windows package tests require nuget on PATH.')
+        packed = self.root / 'packed'
+        packed.mkdir()
+        result = subprocess.run([nuget, 'pack', str(self.output / 'nuget/sandboxed-agents.nuspec'),
+                                 '-OutputDirectory', str(packed), '-NonInteractive'],
+                                cwd=self.root, env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        archives = list(packed.glob('*.nupkg'))
+        self.assertEqual(len(archives), 1)
+        payload = ('LICENSE', 'README.md', 'install-command.ps1', 'remove-command.ps1',
+                   'package-functions.ps1', 'sandboxed-agents-windows-amd64.exe', 'SHA256SUMS')
+        with zipfile.ZipFile(archives[0]) as archive:
+            self.assertEqual({name for name in archive.namelist() if name.startswith('tools/')},
+                             {'tools/' + name for name in payload})
+            for name in payload:
+                self.assertEqual(archive.read('tools/' + name),
+                                 (self.output / 'nuget/tools' / name).read_bytes(), name)
+        self.assertHostStateKept()
 
     @unittest.skipIf(os.name == 'nt', 'Shell fixture executes only on Unix; Windows CI tests real binaries.')
     def test_npm_install_exposes_command_from_unrelated_directory(self):
