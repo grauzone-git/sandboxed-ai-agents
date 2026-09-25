@@ -157,7 +157,7 @@ jobs:
           node-version: '22'
       - name: Test npm command outside checkout
         run: |
-          npm install --global --offline --no-audit --no-fund --prefix "$RUNNER_TEMP/npm-bin" packed/*.tgz
+          npm install --global --offline --no-audit --no-fund --prefix "$RUNNER_TEMP/npm-bin" ./packed/*.tgz
           cd "$RUNNER_TEMP"
           "$RUNNER_TEMP/npm-bin/bin/sandboxed-agents" version
 

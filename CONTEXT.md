@@ -147,16 +147,29 @@ those package tests require a real `nuget pack` there. It also cross-builds the
 supported targets. All of these jobs passed on the #49 commit `eed5f28` and the
 #50 documentation commit `76f2bab`, before CI installed the NuGet CLI and ran
 the real `nuget pack` regression test. Per-commit results through `76f2bab` are
-in [docs/HANDOVER.md](docs/HANDOVER.md#evidence-so-far). CI on a later release
-candidate commit must be checked and recorded in #50.
+in [docs/HANDOVER.md](docs/HANDOVER.md#evidence-so-far). Regular CI run
+36140074262 passed all six jobs on the `v0.1.1` tag commit `3b4fcd4`. CI on a
+later release candidate commit must be checked and recorded in #50.
 
 Packaging, the release workflow, and the open release gates are described in
-[docs/RELEASES.md](docs/RELEASES.md). The `v0.1.0` release run 36137613923
-built the binaries and provenance, then failed at Windows `nuget pack` with
-NU5030, so no release was published. The `v0.1.0` tag is not moved. `v0.1.1`
-replaces it and is not yet published. Manual validation remains a release gate:
-live Podman on Linux and Windows hosts, SSH, adoption, services, forwarding, and
-Azure sign-in.
+[docs/RELEASES.md](docs/RELEASES.md). No release has been published yet. The
+`v0.1.0` release run 36137613923 built the binaries and provenance, then failed
+at Windows `nuget pack` with NU5030. `v0.1.1` fixed the NuGet package. Its
+release run 36140924527 passed the binary, reproducibility, provenance, and
+Windows package jobs, then failed in the Linux npm job because npm read
+`packed/*.tgz` as a GitHub repository shorthand. Neither tag is moved.
+
+`v0.1.2` changes that workflow argument to `./packed/*.tgz` and has no runtime
+changes. A targeted offline check against the downloaded `v0.1.1` package
+artifact reproduced the exit code 128 with the old argument and installed
+version `0.1.1` with the new one. The full offline suite passed locally on this
+change. As recorded in the [v0.1.2 notes](docs/releases/v0.1.2.md#fix), regular
+CI on the new candidate commit and the release run are pending, and `v0.1.2` is
+unpublished. Manual validation remains a
+release gate: live Podman on Linux and Windows hosts, SSH, adoption, services,
+forwarding, Azure sign-in, the ARM64 binary, and the NuGet `PATH` change in a
+new terminal. Installing the published assets, verifying their provenance, and
+rebuilding them to the published `SHA256SUMS` also remain open.
 
 Python is standard library only and targets 3.9. Bash is `set -euo pipefail`
 with a shared `fail` helper. JavaScript is CommonJS with factory functions that
