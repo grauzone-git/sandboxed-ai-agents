@@ -9,11 +9,24 @@ validation on real Linux and Windows machines is owned by @grauzone-git.
 
 Issue #50 has four parts: documentation, manual validation, the first stable
 release, and script removal. This page and the related guides are the documentation
-part. The other three parts have not started, and every gate below is open. A
+part. The owner has reported in #50 that Linux host prerequisites are set up;
+that is an owner report, not runtime validation (see
+[Release and removal sequence](#release-and-removal-sequence)). As recorded
+through `76f2bab`, no manual validation procedure had run, no release had been
+published, the stable release and
+script removal had not started, and every gate below was open. A
 gate closes only with a recorded owner run or CI result for the release
 candidate. Offline test results do not close a runtime gate.
 
 ## Evidence so far
+
+Every runtime validation status on this page, such as "not run", "has not been
+run", "unverified", "not verified", or "exercised offline only", is a snapshot
+recorded through `76f2bab`. Results produced after that commit are recorded in
+#50, not on this page. This does not mean that any validation has run since,
+and it does not change the gates or what the procedures require. The "not run"
+entries in the [validation record template](#validation-record-template) are
+defaults to fill in, not status.
 
 | Change | Commit | Result |
 | --- | --- | --- |
@@ -21,28 +34,31 @@ candidate. Offline test results do not close a runtime gate.
 | #47 services, forwarding, tool setup | `0de5ab8f240485b6065b560e780c344968c3ae58` | Native CI run [36130698062](https://github.com/grauzone-git/sandboxed-ai-agents/actions/runs/36130698062) passed |
 | #48 adoption | `d0394f2e996b4ce3c5d407bdc635860e410a4a1f` | Native CI run [36131589663](https://github.com/grauzone-git/sandboxed-ai-agents/actions/runs/36131589663) passed |
 | #49 release packaging | `eed5f28ad62b3af96699a645943f132c8b9b2802` | Native CI run [36132018293](https://github.com/grauzone-git/sandboxed-ai-agents/actions/runs/36132018293) passed all six jobs |
+| #50 handover documentation | `76f2babe7058e7a9abddb88dc914fb0615de93b2` | Native CI run [36133905583](https://github.com/grauzone-git/sandboxed-ai-agents/actions/runs/36133905583) passed all six jobs |
 
 The #49 run passed the offline `make test` job; the native Linux and Windows
 executable jobs, each running `go test ./...`, all four shared host contract
 suites, and `tests/test-packages.py` against the natively built binary; and the
 three cross-builds. Repeated local `packaging/build.py` builds also produced
-byte-identical binaries. No tag has been pushed, the release workflow has not
-run, and nothing has been attested or published to GitHub, npm, or nuget.org.
+byte-identical binaries. As recorded through `76f2bab`, no tag had been pushed,
+the release workflow had not run, and nothing had been attested or published to
+GitHub, npm, or nuget.org.
 
 A passing run is evidence for its commit and the tests configured at that
-commit only. This page was changed after `eed5f28`, and that documentation
-commit has no CI run yet. The behavior contract gate needs a passing run on the
-commit selected for tagging, which is not recorded yet.
+commit only. The evidence above is recorded through `76f2bab`. The behavior
+contract gate needs a passing run on the commit selected for tagging; CI on a
+later release candidate commit must be checked and recorded in #50.
 
-Nothing has been run against real Podman, real SSH, real Azure sign-in, or a
-real package installation. The Linux ARM64 binary has not run on an ARM64 host,
-and the Windows NuGet `PATH` update has not been checked in a new terminal.
+As recorded through `76f2bab`, nothing had been run against real Podman, real
+SSH, real Azure sign-in, or a real package installation. The Linux ARM64 binary
+had not run on an ARM64 host, and the Windows NuGet `PATH` update had not been
+checked in a new terminal.
 
 ## Gates
 
 | Gate | Evidence required | Status |
 | --- | --- | --- |
-| Behavior contract | Native CI on Linux and Windows passes `go test ./...`, all four shared host contract suites, and the package tests against the binary, on the release candidate commit | Open; passed on `eed5f28`, which is not a release candidate |
+| Behavior contract | Native CI on Linux and Windows passes `go test ./...`, all four shared host contract suites, and the package tests against the binary, on the release candidate commit | Open; recorded passes run through `76f2bab`, and a pass on the tagged commit must be recorded in #50 |
 | Linux runtime | Owner record: build, `up`, SSH, named volumes, binds, protection refusals, `update`, and update rollback on a real rootless Podman host | Open |
 | Windows runtime | Owner record: the same on Windows 11 x64 with a rootless WSL2 Podman 6 machine | Open |
 | Adoption | Owner record of `adopt` on real checkout-owned sandboxes on Linux and Windows, keeping data and SSH access | Open |
@@ -58,8 +74,8 @@ the entry point, until the script removal gate is reached.
 ## Release and removal sequence
 
 1. Get a passing native CI run on the release candidate commit and record its
-   run ID in [Evidence so far](#evidence-so-far). A run on an earlier commit,
-   such as `eed5f28`, does not count.
+   run ID in #50. A run on an earlier commit, such as `76f2bab`, does not
+   count.
 2. Tag a `v0.x` prerelease with notes at `docs/releases/vX.Y.Z.md`, as described
    in [RELEASES.md](RELEASES.md#prepare-a-release). The current source
    implements every command in its help, so the notes' `## Omitted commands`
@@ -105,7 +121,11 @@ the entry point, until the script removal gate is reached.
    in-container manager path `/usr/local/lib/sandbox-agents/manager.cjs` stays
    load-bearing.
 
-Nothing in this sequence has started.
+Implementation CI evidence is recorded in [Evidence so far](#evidence-so-far).
+The owner has reported in #50 that the Linux host prerequisites are set up on
+an Omarchy host. That is an owner report, not runtime validation. As recorded
+through `76f2bab`, no release had been published, and none of the runtime
+procedures on this page had run.
 
 ## Command parity
 
@@ -276,8 +296,8 @@ ssh handover01 true
 sandboxed-agents handover01 agents list
 ```
 
-There is no command that forces an update to fail. The following candidate
-has not been tried. It points `update --no-build` at a stock Debian image,
+There is no command that forces an update to fail. As recorded through
+`76f2bab`, the following candidate had not been tried. It points `update --no-build` at a stock Debian image,
 which has no SSH server, so the replacement should fail the readiness check
 after the original has been stopped and renamed:
 
@@ -404,8 +424,9 @@ container is stopped and renamed. It closes when adoption commits: after the
 replacement is ready, presents the pinned host key, and authorizes the migrated
 client key, the SSH files are moved and `~/.ssh/config` is rewritten. Until
 then, an interrupt or failure removes the replacement, restores the legacy SSH
-files, and restarts the original. After it, the adoption is kept. How long the
-window lasts has not been measured, so there is no reliable moment to press
+files, and restarts the original. After it, the adoption is kept. As recorded
+through `76f2bab`, how long the window lasts had not been measured, so there is
+no reliable moment to press
 Ctrl+C. An interrupt during the build ends the command before anything is
 replaced, which tests nothing.
 
@@ -622,10 +643,12 @@ podman exec --user 1000:1000 handover02 cat /workspace/bind-marker
 ```
 
 Updating `handover02` is Windows-specific: `update` re-reads the bind source
-reported by Podman and translates a WSL `/mnt/DRIVE/...` path back to Windows,
-which has only been exercised offline.
+reported by Podman and translates a WSL `/mnt/DRIVE/...` path back to Windows.
+As recorded through `76f2bab`, that translation had only been exercised
+offline.
 
-Rollback candidate, unverified as on Linux:
+Rollback candidate, as on Linux; as recorded through `76f2bab`, it was
+unverified:
 
 ```powershell
 podman inspect handover01 --format '{{.Id}}'
@@ -747,7 +770,7 @@ outside the directory, delete it with
 
 ## Packages, PATH, and provenance
 
-These steps need a published prerelease, which does not exist yet. Work from a
+These steps need a published prerelease. Work from a
 directory outside any checkout, and create a new `~/handover-packages` or
 `$HOME\handover-packages` directory for the records below; it must not exist
 before. Installation and

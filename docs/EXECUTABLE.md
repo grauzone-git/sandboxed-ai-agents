@@ -6,8 +6,9 @@ implements `version`, `build`, `list`, sandbox lifecycle with optional workspace
 binds, image updates (#45), agent and tool management and sessions (#46),
 services, forwarding, and tool setup including host browser Azure sign-in
 (#47), explicit adoption of checkout-owned sandboxes (#48), and release
-packaging (#49). No release has been published. The executable has not been
-run against real Podman, SSH, or Azure; [HANDOVER.md](HANDOVER.md) lists the
+packaging (#49). As recorded through commit `76f2bab`, no release had been
+published and the executable had not been run against real Podman, SSH, or
+Azure; [HANDOVER.md](HANDOVER.md) lists the
 open gates. The checkout launchers in the [README](../README.md) remain the
 supported entry point until those gates close.
 
@@ -57,8 +58,8 @@ home volume, not on the host. They are listed in [TOOLCHAIN.md](TOOLCHAIN.md).
 
 [RELEASES.md](RELEASES.md) is the procedure for installing a release binary,
 the npm package, or the NuGet package, and for verifying checksums and build
-provenance. No release exists yet, so for now build from source with Go 1.23 or
-later:
+provenance. As recorded through commit `76f2bab`, no release had been
+published; if none is available, build from source with Go 1.23 or later:
 
 ```sh
 go build -o sandboxed-agents ./cmd/sandboxed-agents

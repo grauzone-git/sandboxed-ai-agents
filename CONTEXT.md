@@ -143,8 +143,10 @@ The CI workflow runs `make test` on Linux. On Linux and Windows it runs the Go
 tests, all four [shared host contract](docs/HOST-CONTRACT.md) suites against a
 natively built executable with fake commands only, and `tests/test-packages.py`
 against that same binary. It also cross-builds the supported targets. All of
-these jobs passed on the #49 commit `eed5f28`; per-commit results are in
-[docs/HANDOVER.md](docs/HANDOVER.md#evidence-so-far). Packaging, the release workflow, and the open release gates are
+these jobs passed on the #49 commit `eed5f28` and the #50 documentation commit
+`76f2bab`; that evidence is recorded through `76f2bab`, CI on a later release
+candidate commit must be checked and recorded in #50, and per-commit results are
+in [docs/HANDOVER.md](docs/HANDOVER.md#evidence-so-far). Packaging, the release workflow, and the open release gates are
 described in [docs/RELEASES.md](docs/RELEASES.md); the release workflow has not
 run. Live Podman, SSH, and Azure validation remains a release gate.
 

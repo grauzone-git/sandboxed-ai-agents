@@ -1,7 +1,7 @@
 # Executable releases and packages
 
-No executable release has been published yet, and no release tag has been
-pushed. This page describes what the release workflow in
+As recorded through commit `76f2bab`, no executable release had been published
+and no release tag had been pushed. This page describes what the release workflow in
 `.github/workflows/release.yml` and the scripts under `packaging/` are written
 to do. Command behavior is documented in [EXECUTABLE.md](EXECUTABLE.md); open
 release gates are tracked in
@@ -11,10 +11,15 @@ release gates are tracked in
 
 What has run locally: the offline suite (`./tests/run`, which is what
 `make test` runs), including the offline package tests on Linux, and repeated
-`packaging/build.py` builds that produced identical binaries. Regular CI passed
-on the #49 commit `eed5f28`, including the native package tests on Linux and
-Windows; later documentation commits have not run yet. Native CI results are
-recorded per commit in [HANDOVER.md](HANDOVER.md#evidence-so-far).
+`packaging/build.py` builds that produced identical binaries. Regular CI
+evidence is recorded through the #50 documentation commit `76f2bab`: it passed
+there, and on the #49 commit `eed5f28`, including the native package tests on
+Linux and Windows. That evidence covers those commits only. CI on a later
+release candidate commit must be checked and recorded in
+[#50](https://github.com/grauzone-git/sandboxed-ai-agents/issues/50). Native CI
+results are recorded per commit in [HANDOVER.md](HANDOVER.md#evidence-so-far).
+Every statement on this page that something has not run, been tested, or been
+checked describes the state as recorded through `76f2bab`.
 
 Before the first preview tag, these automated checks must pass on the release
 candidate commit:
@@ -36,7 +41,7 @@ They gate the first stable release instead:
 - running the Linux ARM64 binary, natively or through the npm package, on an
   ARM64 host
 
-None of them has run. The owner-run procedures are in [HANDOVER.md](HANDOVER.md),
+As recorded through `76f2bab`, none had run. The owner-run procedures are in [HANDOVER.md](HANDOVER.md),
 and results are recorded in
 [#50](https://github.com/grauzone-git/sandboxed-ai-agents/issues/50).
 
@@ -102,7 +107,7 @@ changes; provenance verification identifies the workflow run that built the
 binary. The workflow is written to create attestations with `actions/attest`
 and verify each one with `gh attestation verify` before publishing, using
 [GitHub's artifact attestation support](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations).
-That job has not run yet.
+As recorded through `76f2bab`, that job had not run.
 
 To upgrade, repeat these steps with the newer release and replace the file.
 
@@ -131,14 +136,14 @@ checks it against `SHA256SUMS`, and on Linux sets its executable bit. A mismatch
 fails installation. The launcher repeats the checksum check on every invocation,
 then forwards arguments, standard streams, and exit status. Supported targets
 are Linux x64, Linux ARM64, and Windows x64. The Linux ARM64 binary is only
-cross-built and compared across repeated builds; running it through the npm
-package on an ARM64 host has not been tested. On other platforms, including
+cross-built and compared across repeated builds; as recorded through `76f2bab`,
+running it through the npm package on an ARM64 host had not been tested. On other platforms, including
 Windows ARM64, installation fails with an unsupported platform error.
 
 Do not disable install scripts. Skipping them does not bypass the checksum check,
 because the launcher also performs it, but on Linux the binary may then lack its
-executable bit. Whether npm preserves that bit from the package archive has not
-been checked.
+executable bit. As recorded through `76f2bab`, whether npm preserves that bit
+from the package archive had not been checked.
 
 To upgrade, install the newer package the same way. To remove the command:
 
@@ -171,9 +176,9 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
 The setting ends when the window closes. Run the setup script in that same
 window, not through a new `pwsh -File` process, so its change to the session's
 `PATH` stays visible. A policy set by Group Policy cannot be overridden this
-way; ask whoever manages the machine. Whether scripts extracted from a
-downloaded package are blocked by the default policy has not been checked on a
-real host.
+way; ask whoever manages the machine. As recorded through `76f2bab`, whether
+scripts extracted from a downloaded package are blocked by the default policy
+had not been checked on a real host.
 
 Place the downloaded `.nupkg` in a local directory used as a package source:
 
@@ -226,8 +231,8 @@ in place until every handover condition in
 [#36](https://github.com/grauzone-git/sandboxed-ai-agents/issues/36) is met, and
 are removed no earlier than the release after the first stable release.
 
-Commit release notes at `docs/releases/vX.Y.Z.md` before tagging; the directory
-does not exist yet. The workflow fails without that file. For every `v0.*` tag
+Commit release notes at `docs/releases/vX.Y.Z.md` before tagging. The workflow
+fails without that file. For every `v0.*` tag
 and every tag with a prerelease suffix, the notes need a nonempty
 `## Omitted commands` section naming unsupported commands, or stating explicitly
 that none are omitted. Also record known platform limitations.
@@ -260,7 +265,7 @@ command parity with the scripts.
 
 ### What the workflow does
 
-The workflow has not run yet. It is written to:
+As recorded through `76f2bab`, the workflow had not run. It is written to:
 
 1. Check the tag format and release notes.
 2. Run `go test ./...` and `make test` on Linux.
