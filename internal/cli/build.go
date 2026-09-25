@@ -40,7 +40,11 @@ func withBuildContext(action func(string) error) (result error) {
 		if err != nil {
 			return err
 		}
-		return os.WriteFile(destination, data, 0644)
+		if err := os.WriteFile(destination, data, 0644); err != nil {
+			return err
+		}
+		// COPY preserves these modes, so image users need read access even under a restrictive host umask.
+		return os.Chmod(destination, 0644)
 	})
 	if err != nil {
 		return err

@@ -4,12 +4,19 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+type buildRecord struct {
+	Args  []string
+	Files map[string]uint32
+	Dirs  map[string]uint32
+}
 
 func TestMain(m *testing.M) {
 	if os.Getenv("SANDBOX_CLI_TEST_CHILD") == "1" {
@@ -51,17 +58,31 @@ func fakePodman() {
 		fmt.Println("true")
 	case "build":
 		context := args[len(args)-1]
-		info, err := os.Stat(context)
-		if err != nil {
-			panic(err)
-		}
 		if _, err := os.Stat(filepath.Join(context, "Containerfile")); err != nil {
 			panic(err)
 		}
-		record := struct {
-			Args []string
-			Mode uint32
-		}{args, uint32(info.Mode().Perm())}
+		record := buildRecord{Args: args, Files: map[string]uint32{}, Dirs: map[string]uint32{}}
+		if err := filepath.WalkDir(context, func(path string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			info, err := entry.Info()
+			if err != nil {
+				return err
+			}
+			relative, err := filepath.Rel(context, path)
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() {
+				record.Dirs[relative] = uint32(info.Mode().Perm())
+			} else {
+				record.Files[relative] = uint32(info.Mode().Perm())
+			}
+			return nil
+		}); err != nil {
+			panic(err)
+		}
 		data, _ := json.Marshal(record)
 		if err := os.WriteFile(os.Getenv("SANDBOX_BUILD_LOG"), data, 0600); err != nil {
 			panic(err)
@@ -113,9 +134,23 @@ func TestVersionWithoutRuntimeOrCheckout(t *testing.T) {
 }
 
 func TestBuildUsesPrivateBundledContextAndCleansIt(t *testing.T) {
-	for _, fail := range []bool{false, true} {
-		t.Run(fmt.Sprint(fail), func(t *testing.T) {
+	for _, scenario := range []struct {
+		fail        bool
+		restrictive bool
+	}{{false, false}, {true, false}, {false, true}, {true, true}} {
+		t.Run(fmt.Sprintf("fail=%t/umask077=%t", scenario.fail, scenario.restrictive), func(t *testing.T) {
+			if scenario.restrictive && os.PathSeparator != '/' {
+				t.Skip("umask requires a Unix host")
+			}
 			command := cliCommand(t, "build", "--build-arg", "VALUE=contains spaces")
+			if scenario.restrictive {
+				shell, err := exec.LookPath("sh")
+				if err != nil {
+					t.Fatal(err)
+				}
+				command.Args = append([]string{shell, "-c", `umask 077; exec "$@"`, "sh"}, command.Args...)
+				command.Path = shell
+			}
 			bin := t.TempDir()
 			filename := "podman"
 			if strings.HasSuffix(os.Args[0], ".exe") {
@@ -134,11 +169,11 @@ func TestBuildUsesPrivateBundledContextAndCleansIt(t *testing.T) {
 			}
 			log := filepath.Join(t.TempDir(), "build.json")
 			command.Env = append(command.Env, "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "SANDBOX_BUILD_LOG="+log)
-			if fail {
+			if scenario.fail {
 				command.Env = append(command.Env, "SANDBOX_BUILD_FAIL=1")
 			}
 			output, err := command.CombinedOutput()
-			if fail {
+			if scenario.fail {
 				if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 23 {
 					t.Fatalf("want exit23, got %v: %s", err, output)
 				}
@@ -149,10 +184,7 @@ func TestBuildUsesPrivateBundledContextAndCleansIt(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			var record struct {
-				Args []string
-				Mode uint32
-			}
+			var record buildRecord
 			if err = json.Unmarshal(data, &record); err != nil {
 				t.Fatal(err)
 			}
@@ -160,8 +192,20 @@ func TestBuildUsesPrivateBundledContextAndCleansIt(t *testing.T) {
 			if _, err = os.Stat(context); !os.IsNotExist(err) {
 				t.Fatalf("build context not removed: %s %v", context, err)
 			}
-			if os.PathSeparator == '/' && record.Mode != 0700 {
-				t.Fatalf("context mode %o", record.Mode)
+			if _, ok := record.Files["agent-manager.cjs"]; !ok {
+				t.Fatal("build context omitted the manager")
+			}
+			if os.PathSeparator == '/' {
+				for path, mode := range record.Dirs {
+					if mode != 0700 {
+						t.Errorf("context directory %s mode %o, want 700", path, mode)
+					}
+				}
+				for path, mode := range record.Files {
+					if mode != 0644 {
+						t.Errorf("context file %s mode %o, want 644 for non-root image users", path, mode)
+					}
+				}
 			}
 			if !strings.Contains(strings.Join(record.Args, "\n"), "io.sandboxed-agents.version=0.1.0-dev") {
 				t.Fatalf("missing version label %v", record.Args)
