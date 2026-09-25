@@ -13,6 +13,7 @@ dotnet --list-sdks | grep -E '^10\.'
 node --version
 npm --version
 git --version
+python3 --version
 pwsh -NoLogo -NoProfile -Command '$PSVersionTable.PSVersion.ToString()'
 az version
 test -n "$(az extension show --name azure-devops --query version --output tsv)"
@@ -23,7 +24,7 @@ playwright --version
 test "$(npm config get prefix)" = /home/agent/.local
 printf 'Toolchain, non-root identity, writable workspace/home, and credential separation: OK\n'
 
-# Run via `agent-smoke --full` to exercise restore, builds, npm, and browsers.
+# Run via `agent-smoke --full` to exercise restore, builds, npm, Python venvs, and browsers.
 if [[ ${1:-} == --full ]]; then
     check_dir=$(mktemp -d /tmp/agent-smoke.XXXXXXXX)
     trap 'rm -rf -- "$check_dir"' EXIT
@@ -35,6 +36,9 @@ if [[ ${1:-} == --full ]]; then
         dotnet new console --framework "net$major.0"
         dotnet run
     done
+    python3 -m venv "$check_dir/python"
+    "$check_dir/python/bin/pip" install --disable-pip-version-check --quiet six
+    "$check_dir/python/bin/python" -c "import six; print('Python venv and pip install: OK')"
     mkdir "$check_dir/browser"
     cd "$check_dir/browser"
     npm init -y >/dev/null

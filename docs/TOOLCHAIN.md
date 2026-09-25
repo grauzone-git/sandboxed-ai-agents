@@ -6,9 +6,10 @@ See the [Windows quick guide](QUICKGUIDE-WINDOWS.md) for host setup.
 [Back to the overview](../README.md) · [Agents and tools](AGENT-SETUP.md)
 
 The shared image carries Debian 12 slim, Node.js 24 with npm, .NET SDKs 9 and
-10, Git and the GitHub CLI, Azure CLI with the DevOps extension, PowerShell (`pwsh`), OpenSSH, tmux,
-and Playwright's system dependencies. Agents and optional dashboard tools are
-not in the image; they install per sandbox, into its named home.
+10, Python 3 with `venv` and `pip`, Git and the GitHub CLI, Azure CLI with the
+DevOps extension, PowerShell (`pwsh`), OpenSSH, tmux, and Playwright's system
+dependencies. Agents and optional dashboard tools are not in the image; they
+install per sandbox, into its named home.
 
 ## Image options
 
@@ -24,7 +25,7 @@ arguments pass straight through to Podman, and you can combine them freely:
 
 | Build argument | Default | Use |
 |---|---|---|
-| `WITH_NATIVE_BUILD_TOOLS` | `0` | Set to `1` for Python, C/C++ compilers, and pkg-config |
+| `WITH_NATIVE_BUILD_TOOLS` | `0` | Set to `1` for C/C++ compilers and pkg-config |
 | `PLAYWRIGHT_BROWSERS` | `chromium-firefox` | Set to `all` to add WebKit system dependencies |
 | `WITH_EDGE` | `1` | Set to `0` to leave Edge out, which an ARM64 build needs |
 | `PLAYWRIGHT_VERSION` | `latest` | Pin the image's Playwright CLI |
@@ -220,6 +221,22 @@ installed SDK wins. The SDK distributions sit side by side without the extra
 tooling the full SDK container image would bring. Microsoft's
 [support policy](https://dotnet.microsoft.com/en-us/platform/support/policy) is
 worth checking when you choose a target.
+
+### Python
+
+```bash
+python3 --version
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r requirements.txt
+```
+
+The image has Debian's Python 3. Debian marks it as externally managed, so
+install packages into a virtual environment rather than the system
+interpreter. A venv under `/workspace` stays with the project. Packages with
+C extensions and no prebuilt wheel need an image built with
+`WITH_NATIVE_BUILD_TOOLS=1`. Azure CLI brings its own private interpreter under
+`/opt/az`; it is not on `PATH` and is not meant for project use.
 
 ### npm
 
@@ -472,9 +489,10 @@ Run these from the **host**, with SSH configured:
 
 `check` verifies the installed tools and the explicit mount inventory.
 `check-full` goes further: it builds and runs temporary .NET 9 and 10 apps,
-installs an npm package, and launches headless Chromium, Firefox, and Edge if
-present. It needs network access and leaves caches behind, though the temporary
-projects are cleaned up. Edge is skipped when the image does not have it.
+installs a Python package into a temporary venv, installs an npm package, and
+launches headless Chromium, Firefox, and Edge if present. It needs network
+access and leaves caches behind, though the temporary projects are cleaned up.
+Edge is skipped when the image does not have it.
 
 
 ## Windows image and nested-container notes
