@@ -2,7 +2,7 @@
 
 The Go controller is being implemented under
 [#36](https://github.com/grauzone-git/sandboxed-ai-agents/issues/36). This preview
-implements `version`, `build`, `list`, and the named-volume lifecycle. Use the
+implements `version`, `build`, `list`, and sandbox lifecycle with optional workspace binds. Use the
 existing scripts for SSH setup, agent/tool management, and updates until their
 executable issues land.
 
@@ -60,7 +60,7 @@ to replace retained tool selections; omitting it preserves the saved selection.
 `--ssh-port` defaults to `2222`. CPU and memory defaults are `4` and `8g`, with
 `SANDBOX_CPUS` and `SANDBOX_MEMORY` overrides. Both platforms accept these flags.
 
-Workspace, home, and SSH server state use `agent01-workspace`, `agent01-home`,
+By default, workspace, home, and SSH server state use `agent01-workspace`, `agent01-home`,
 and `agent01-sshd` named volumes. Containers carry owner and executable version
 labels; volumes carry the owner label. Existing volumes are reused only when
 owned by the selected controller. Lifecycle commands reject foreign containers,
@@ -72,3 +72,24 @@ forces volume deletion. `shell` and `check` use `podman exec` without SSH setup.
 `check` validates mounts before running the in-container smoke test; `check-full`
 also runs its full checks. These lifecycle commands create no local SSH files or
 other host state and write nothing beside the executable.
+
+## Bind a workspace
+
+```sh
+sandboxed-agents agent01 up ./workspaces/agent01 --agents codex --ssh-port 2222
+```
+
+An explicit directory replaces only the workspace volume. A missing directory
+is created after validation; home and SSH server state remain named volumes.
+Paths containing spaces work when quoted. Removal never deletes the host
+workspace. The positional port form `NAME up WORKSPACE PORT` also works.
+
+Workspace protection rejects binds containing, or contained by, the controller
+state directory, `~/.ssh`, active temporary build directories, or the executable.
+It resolves symlinks, including existing parents of new paths. A project-local
+executable or launcher symlink produces an error suggesting a global install.
+State belongs under `$XDG_STATE_HOME/sandboxed-agents`, defaulting to
+`~/.local/state/sandboxed-agents`, or `%LOCALAPPDATA%\\sandboxed-agents` on Windows.
+Creation does not need to write state there yet. Windows machine/path alias
+validation remains part of #43; offline tests do not establish live Windows
+bind support.

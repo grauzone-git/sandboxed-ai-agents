@@ -17,7 +17,10 @@ import (
 	sandboxassets "github.com/grauzone-git/sandboxed-ai-agents"
 )
 
-type createOptions struct{ agents, tools, port, cpus, memory string }
+type createOptions struct {
+	agents, tools, port, cpus, memory, workspace string
+	bind                                         bool
+}
 
 func lifecycle(command, name string, args []string) error {
 	if command == "up" {
@@ -75,6 +78,17 @@ func parseCreate(args []string) (createOptions, error) {
 	seen := map[string]bool{}
 	for i := 0; i < len(args); i++ {
 		flag := args[i]
+		if !strings.HasPrefix(flag, "-") && !seen["workspace"] {
+			options.workspace = flag
+			options.bind = true
+			seen["workspace"] = true
+			continue
+		}
+		if !strings.HasPrefix(flag, "-") && seen["workspace"] && !seen["--ssh-port"] {
+			options.port = flag
+			seen["--ssh-port"] = true
+			continue
+		}
 		if !slices.Contains([]string{"--agents", "--tools", "--ssh-port", "--cpus", "--memory"}, flag) {
 			return options, fmt.Errorf("unknown up option: %s", flag)
 		}
@@ -125,6 +139,12 @@ func parseCreate(args []string) (createOptions, error) {
 	}
 	if !regexp.MustCompile(`^[1-9][0-9]*[bBkKmMgGtT]?$`).MatchString(options.memory) {
 		return options, fmt.Errorf("--memory must be a positive size such as 8g")
+	}
+	if options.bind {
+		options.workspace, err = workspacePath(options.workspace)
+		if err != nil {
+			return options, err
+		}
 	}
 	return options, nil
 }
@@ -265,6 +285,9 @@ func createSandbox(name string, options createOptions) error {
 	}
 	missing := []string{}
 	for _, volume := range sandboxVolumes(name) {
+		if options.bind && volume == name+"-workspace" {
+			continue
+		}
 		exists, err := resourceExists("volume", volume)
 		if err != nil {
 			return err
@@ -275,6 +298,11 @@ func createSandbox(name string, options createOptions) error {
 			}
 		} else {
 			missing = append(missing, volume)
+		}
+	}
+	if options.bind {
+		if err := os.MkdirAll(options.workspace, 0755); err != nil {
+			return err
 		}
 	}
 	for _, volume := range missing {
@@ -289,8 +317,10 @@ func createSandbox(name string, options createOptions) error {
 	if err := waitForEntrypoint(name); err != nil {
 		return err
 	}
-	if err := podman("exec", "--user", "0", name, "/bin/chown", "1000:1000", "/workspace"); err != nil {
-		return err
+	if !options.bind {
+		if err := podman("exec", "--user", "0", name, "/bin/chown", "1000:1000", "/workspace"); err != nil {
+			return err
+		}
 	}
 	if options.tools != "" {
 		if err := manager(name, "tools", "set", "none"); err != nil {
@@ -358,12 +388,19 @@ func checkSandbox(name string, full bool) error {
 	}
 	for _, mount := range mounts {
 		volume, ok := expected[mount.Destination]
+		if ok && mount.Destination == "/workspace" && mount.Type == "bind" {
+			if _, err := workspacePath(mount.Source); err != nil {
+				return err
+			}
+			delete(expected, mount.Destination)
+			continue
+		}
 		if !ok || mount.Type != "volume" || mount.Name != volume {
 			return fmt.Errorf("unexpected mount at %s", mount.Destination)
 		}
 		delete(expected, mount.Destination)
 	}
-	fmt.Fprintln(os.Stdout, "Mount policy: named workspace, home and SSH volumes: OK")
+	fmt.Fprintln(os.Stdout, "Mount policy: workspace storage and named home/SSH volumes: OK")
 	args := []string{"exec", "--user", "1000:1000", "--workdir", "/workspace", name, "/usr/local/bin/agent-smoke"}
 	if full {
 		args = append(args, "--full")
@@ -386,5 +423,9 @@ func waitForEntrypoint(name string) error {
 }
 
 func createArguments(name string, options createOptions) []string {
-	return []string{"run", "--detach", "--name", name, "--hostname", name, "--label", ownerLabel + "=" + owner(), "--label", versionLabel + "=" + Version, "--label", "io.sandboxed-agents.capabilities=none", "--userns=keep-id:uid=1000,gid=1000", "--user", "0:0", "--security-opt=no-new-privileges", "--network=pasta:--no-map-gw", "--memory=" + options.memory, "--cpus=" + options.cpus, "--pids-limit=2048", "--shm-size=1g", "--publish", "127.0.0.1:" + options.port + ":2222", "--volume", name + "-workspace:/workspace", "--volume", name + "-home:/home/agent", "--volume", name + "-sshd:/var/lib/agent-sshd", imageName()}
+	workspace := name + "-workspace:/workspace"
+	if options.bind {
+		workspace = options.workspace + ":/workspace:Z"
+	}
+	return []string{"run", "--detach", "--name", name, "--hostname", name, "--label", ownerLabel + "=" + owner(), "--label", versionLabel + "=" + Version, "--label", "io.sandboxed-agents.capabilities=none", "--userns=keep-id:uid=1000,gid=1000", "--user", "0:0", "--security-opt=no-new-privileges", "--network=pasta:--no-map-gw", "--memory=" + options.memory, "--cpus=" + options.cpus, "--pids-limit=2048", "--shm-size=1g", "--publish", "127.0.0.1:" + options.port + ":2222", "--volume", workspace, "--volume", name + "-home:/home/agent", "--volume", name + "-sshd:/var/lib/agent-sshd", imageName()}
 }
