@@ -19,10 +19,10 @@ class PythonImageTests(unittest.TestCase):
             with self.subTest(package=package):
                 self.assertIn(package, packages)
 
-    def test_native_build_tools_add_only_compilers(self):
+    def test_native_build_tools_add_compilers_and_python_headers(self):
         native = re.search(r'1\) DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ([^;]*);', recipe())
         self.assertIsNotNone(native, 'WITH_NATIVE_BUILD_TOOLS=1 branch not found')
-        self.assertEqual(native.group(1).split(), ['build-essential', 'pkg-config'])
+        self.assertEqual(native.group(1).split(), ['build-essential', 'pkg-config', 'python3-dev'])
 
     def test_build_versions_record_python(self):
         self.assertRegex(recipe(), r'python3 --version;[^}]*\}\s*> /opt/agent-tools/build-versions\.txt')
@@ -30,6 +30,7 @@ class PythonImageTests(unittest.TestCase):
     def test_smoke_checks_python(self):
         smoke = (CONTAINER / 'smoke.sh').read_text()
         quick, full = smoke.split('--full ]]', 1)
+        self.assertIn('test "$(command -v python3)" = /usr/bin/python3', quick)
         self.assertRegex(quick, r'(?m)^python3 --version$')
         self.assertIn('python3 -m venv', full)
 

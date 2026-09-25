@@ -25,7 +25,7 @@ arguments pass straight through to Podman, and you can combine them freely:
 
 | Build argument | Default | Use |
 |---|---|---|
-| `WITH_NATIVE_BUILD_TOOLS` | `0` | Set to `1` for C/C++ compilers and pkg-config |
+| `WITH_NATIVE_BUILD_TOOLS` | `0` | Set to `1` for C/C++ compilers, pkg-config, and Python headers |
 | `PLAYWRIGHT_BROWSERS` | `chromium-firefox` | Set to `all` to add WebKit system dependencies |
 | `WITH_EDGE` | `1` | Set to `0` to leave Edge out, which an ARM64 build needs |
 | `PLAYWRIGHT_VERSION` | `latest` | Pin the image's Playwright CLI |
@@ -235,8 +235,9 @@ The image has Debian's Python 3. Debian marks it as externally managed, so
 install packages into a virtual environment rather than the system
 interpreter. A venv under `/workspace` stays with the project. Packages with
 C extensions and no prebuilt wheel need an image built with
-`WITH_NATIVE_BUILD_TOOLS=1`. Azure CLI brings its own private interpreter under
-`/opt/az`; it is not on `PATH` and is not meant for project use.
+`WITH_NATIVE_BUILD_TOOLS=1`; see [image options](#image-options). Azure CLI
+brings its own private interpreter under `/opt/az`; it is not on `PATH` and is
+not meant for project use.
 
 ### npm
 
