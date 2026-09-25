@@ -97,6 +97,9 @@ Workspace protection rejects binds containing, or contained by, the controller
 state directory, `~/.ssh`, active temporary build directories, or the executable.
 It resolves symlinks, including existing parents of new paths. A project-local
 executable or launcher symlink produces an error suggesting a global install.
+Through npm, it also rejects binds containing, or contained by, the npm command
+used for launch, its `.cmd` or `.ps1` shims, or its launch link; see
+[npm](RELEASES.md#npm).
 State belongs under `$XDG_STATE_HOME/sandboxed-agents`, defaulting to
 `~/.local/state/sandboxed-agents`, or `%LOCALAPPDATA%\\sandboxed-agents` on Windows.
 Creation does not need to write state there yet. Windows path alias handling

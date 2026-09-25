@@ -1,0 +1,185 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  binaries:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.1'
+          cache: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+      - name: Require release notes and preview omissions
+        shell: python
+        run: |
+          import os, pathlib, re, sys
+          sys.dont_write_bytecode = True
+          sys.path.insert(0, 'packaging')
+          from metadata import validate_version
+          tag = os.environ['GITHUB_REF_NAME']
+          if not tag.startswith('v'):
+              raise SystemExit('Error: version tags must begin with v, for example v0.1.0')
+          try:
+              validate_version(tag[1:])
+          except ValueError as error:
+              raise SystemExit(f'Error: {error}') from None
+          path = pathlib.Path(f'docs/releases/{tag}.md')
+          try:
+              notes = path.read_text(encoding='utf-8')
+          except FileNotFoundError:
+              raise SystemExit(f'Error: commit {path} before tagging {tag}') from None
+          except (OSError, UnicodeError) as error:
+              raise SystemExit(f'Error: cannot read release notes {path}: {error}') from None
+          if tag.startswith('v0.') or '-' in tag:
+              omitted = re.search(r'(?:^|\n)## Omitted commands\n(.*?)(?:\n## |\Z)', notes, re.S)
+              if not omitted or not omitted.group(1).strip():
+                  raise SystemExit(f'Error: preview notes {path} must include a nonempty "## Omitted commands" section')
+      - run: go test ./...
+      - run: make test
+      - name: Build reproducible binaries and checksums
+        run: python3 -B packaging/build.py --version "${GITHUB_REF_NAME#v}" --commit "$GITHUB_SHA" --output release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-binaries
+          path: release/*
+
+  provenance:
+    needs: binaries
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-binaries
+          path: release
+      - uses: actions/attest@v4
+        with:
+          subject-path: 'release/sandboxed-agents-*'
+      - name: Verify each binary's provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for binary in release/sandboxed-agents-*; do
+            gh attestation verify "$binary" --repo "$GITHUB_REPOSITORY"
+          done
+
+  packages:
+    needs: binaries
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-binaries
+          path: release
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.1'
+          cache: false
+      - run: |
+          go build -o fake-command.exe ./tests/fake-command
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          "SANDBOX_TEST_FAKE_COMMAND=$pwd/fake-command.exe" >> $env:GITHUB_ENV
+      - uses: NuGet/setup-nuget@v2
+      - name: Stage exact release artifacts
+        run: python -B packaging/prepare.py --version $env:GITHUB_REF_NAME.Substring(1) --artifacts release --output packages
+      - name: Pack npm and NuGet
+        run: |
+          New-Item -ItemType Directory -Path packed | Out-Null
+          npm pack ./packages/npm --ignore-scripts --pack-destination packed
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          nuget pack packages/nuget/sandboxed-agents.nuspec -OutputDirectory packed
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Test installers and checksum rejection
+        run: |
+          $env:SANDBOX_TEST_PACKAGE_BINARY = (Resolve-Path release/sandboxed-agents-windows-amd64.exe).Path
+          python -B tests/test-packages.py
+      - name: Test actual npm command outside checkout
+        run: |
+          $prefix = Join-Path $env:RUNNER_TEMP 'npm-bin'
+          npm install --global --offline --no-audit --no-fund --prefix $prefix (Get-ChildItem packed/*.tgz).FullName
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Push-Location $env:RUNNER_TEMP
+          & (Join-Path $prefix 'sandboxed-agents.cmd') version
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Pop-Location
+      - name: Test actual NuGet command outside checkout
+        run: |
+          nuget install SandboxedAgents -Version $env:GITHUB_REF_NAME.Substring(1) -Source "$pwd/packed" -OutputDirectory extracted -NonInteractive -Prerelease
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $tools = (Get-ChildItem extracted -Directory | Select-Object -First 1).FullName + '/tools'
+          $bin = Join-Path $env:RUNNER_TEMP 'nuget-bin'
+          & "$tools/install-command.ps1" -InstallDirectory $bin -NoPathUpdate
+          if (-not $?) { exit 1 }
+          Push-Location $env:RUNNER_TEMP
+          & "$bin/sandboxed-agents.exe" version
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Pop-Location
+          & "$tools/remove-command.ps1" -InstallDirectory $bin -NoPathUpdate
+          if (-not $?) { exit 1 }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-packages
+          path: packed/*
+
+  linux-package:
+    needs: packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-packages
+          path: packed
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test npm command outside checkout
+        run: |
+          npm install --global --offline --no-audit --no-fund --prefix "$RUNNER_TEMP/npm-bin" packed/*.tgz
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/npm-bin/bin/sandboxed-agents" version
+
+  publish:
+    needs: [binaries, provenance, packages, linux-package]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-binaries
+          path: release
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-packages
+          path: release
+      - name: Publish binaries, checksums, and packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          options=()
+          if [[ "$GITHUB_REF_NAME" == v0.* || "$GITHUB_REF_NAME" == *-* ]]; then options+=(--prerelease); fi
+          gh release create "$GITHUB_REF_NAME" release/* --verify-tag --title "$GITHUB_REF_NAME" --notes-file "docs/releases/$GITHUB_REF_NAME.md" "${options[@]}"

@@ -27,9 +27,18 @@ go test ./...  # standalone controller tests at the public CLI boundary
 go build ./cmd/sandboxed-agents
 ```
 
-`make test` needs Bash, Python 3.9+, Node.js, and OpenSSH client tools. It does
-not need network access, Podman, or credentials, and it must stay that way. Run
-it before you hand any change back.
+`make test` needs Bash, Python 3.9+, Node.js with npm, and OpenSSH client tools.
+npm is a test requirement only: `tests/test-packages.py` packs and installs the
+npm package offline from generated fixture binaries. The executable itself needs
+neither Node.js nor npm unless a user installs it through that package, which
+needs npm to install and Node.js to run its wrapper. `make test` does not need
+network access, Podman, or credentials, and it must stay that way. Run it before
+you hand any change back.
+
+The standard offline Linux script and packaging tests do not need Go. Go is
+needed for the executable tests (`go test ./...`) and on Windows, where
+`tests/native_fakes.py` installs each fake command as a copy of a Go relay built
+from `./tests/fake-command` and named by `SANDBOX_TEST_FAKE_COMMAND`.
 
 Anything involving a real container is a manual step the user runs, not
 something you run unprompted:
@@ -118,9 +127,11 @@ or standalone executable.
 | `tests/test-validators.py` | Selection and mount validation |
 | `tests/test-list.py` | Listing checkout-owned sandboxes |
 | `tests/test-image-recipe.py` | Image packages, recorded versions, smoke checks |
+| `tests/test-packages.py` | `build.py` with a fake Go: toolchain pin, cleared Go env, build flags, repeated-build mismatch. `prepare.py` malformed `SHA256SUMS` rejection. Fixture packages: npm install/run/uninstall and checksum rejection; NuGet install hash check and removal of only its command (pwsh-gated); raw Windows registry `PATH` (Windows only); npm launcher protection with a real native binary (`SANDBOX_TEST_PACKAGE_BINARY`); SSH config and state retained |
 
-`tests/check-sources.py` parses every file under `src/` and `tests/`, validates
-the JSON catalogs, and resolves local markdown links in `README.md` and
+`tests/check-sources.py` parses every file under `src/`, `tests/`, and
+`packaging/`, validates the JSON catalogs, runs `tests/check-powershell.ps1`
+when `pwsh` is installed, and resolves local markdown links in `README.md` and
 `docs/*.md`. It does not check links in root-level files like this one, so
 verify those by hand.
 

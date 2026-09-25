@@ -134,11 +134,19 @@ become marketing.
 
 The scripts have no third-party dependencies. The Go executable permits the
 standard library and `golang.org/x/sys`. `make test` runs the script regressions
-offline against fake Podman executables and isolated home directories;
-`go test ./...` runs the executable tests. GitHub Actions runs the script suite,
-the Go tests, and all four shared host contract suites against the executable
-on Linux and Windows with fake commands only, and cross-builds the supported
-targets. Live Podman, SSH, and Azure validation remains a release gate.
+offline against fake Podman executables and isolated home directories. It also
+packs and installs the npm package offline from generated fixture binaries, so
+it needs Node.js with npm, but no network access, Podman, or credentials.
+`go test ./...` runs the executable tests.
+
+The CI workflow runs `make test` on Linux. On Linux and Windows it runs the Go
+tests, all four [shared host contract](docs/HOST-CONTRACT.md) suites against a
+natively built executable with fake commands only, and `tests/test-packages.py`
+against that same binary. It also cross-builds the supported targets. The
+native package checks are configured in CI, but no results for them are
+recorded yet. Packaging, the release workflow, and the open release gates are
+described in [docs/RELEASES.md](docs/RELEASES.md); the release workflow has not
+run. Live Podman, SSH, and Azure validation remains a release gate.
 
 Python is standard library only and targets 3.9. Bash is `set -euo pipefail`
 with a shared `fail` helper. JavaScript is CommonJS with factory functions that
@@ -173,3 +181,4 @@ customized image builds.
 | Work with sandboxes day to day | [docs/SANDBOXES.md](docs/SANDBOXES.md) |
 | Set up agents and dashboards | [docs/AGENT-SETUP.md](docs/AGENT-SETUP.md) |
 | Configure the image or the SDKs | [docs/TOOLCHAIN.md](docs/TOOLCHAIN.md) |
+| Release or install the executable | [docs/RELEASES.md](docs/RELEASES.md) |

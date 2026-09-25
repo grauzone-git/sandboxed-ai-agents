@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
-    files = [path for directory in ("src", "tests")
+    files = [path for directory in ("src", "tests", "packaging")
              for path in (ROOT / directory).rglob("*") if path.is_file()]
     for file in files:
         if file.suffix == ".py":

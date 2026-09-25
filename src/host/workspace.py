@@ -8,7 +8,7 @@ def protected_paths(project, ssh_root):
     paths = [ssh_root, project / ".local", project / ".git", project / "sandbox",
              project / "sandbox.ps1", project / "src", project / "tests", project / "Makefile",
              project / "cmd", project / "internal", project / "assets.go", project / "go.mod",
-             project / "go.sum", project / "sandboxed-agents", project / "sandboxed-agents.exe"]
+             project / "go.sum", project / "packaging", project / "sandboxed-agents", project / "sandboxed-agents.exe"]
     # A linked worktree stores Git metadata outside its checkout. Protect both
     # that worktree's directory and the common object/configuration directory.
     git = project / ".git"
@@ -22,7 +22,8 @@ def protected_paths(project, ssh_root):
                 paths.append((metadata / common.read_text(encoding="utf-8").strip()).resolve())
     # rglob does not follow directory symlinks. Each link itself is still checked
     # against its resolved target, without traversing arbitrary external trees.
-    for directory in (project / "src", project / "tests", project / "cmd", project / "internal"):
+    for directory in (project / "src", project / "tests", project / "cmd", project / "internal",
+                      project / "packaging"):
         paths.extend(directory.rglob("*"))
     for item in paths:
         yield item.absolute()

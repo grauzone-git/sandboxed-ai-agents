@@ -1,12 +1,14 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"unicode"
 )
 
 func stateDir() (string, error) {
@@ -72,6 +74,19 @@ func containsPath(parent, child string) bool {
 	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
 
+func rejectLaunchConflict(workspace, launch string) error {
+	parent, err := canonicalPath(filepath.Dir(launch))
+	if err != nil {
+		return err
+	}
+	// Protect the final link name even when its target lives elsewhere.
+	invocation := filepath.Join(parent, filepath.Base(launch))
+	if containsPath(workspace, invocation) || containsPath(invocation, workspace) {
+		return fmt.Errorf("workspace %s conflicts with launch path %s. Use a global install of sandboxed-agents outside the workspace.", workspace, invocation)
+	}
+	return nil
+}
+
 func workspacePath(path string) (string, error) {
 	if path == "" || strings.ContainsAny(path, "\r\n") {
 		return "", fmt.Errorf("workspace path must not be empty or contain line breaks")
@@ -99,6 +114,23 @@ func workspacePath(path string) (string, error) {
 		return "", err
 	}
 	protected := []string{state, filepath.Join(home, ".ssh"), executable}
+	// Package wrappers add their launch links and shims. These paths only add
+	// protections; they cannot replace the binary's own protected paths.
+	if encoded := os.Getenv("SANDBOX_LAUNCH_PATHS"); encoded != "" {
+		var launches []string
+		if err := json.Unmarshal([]byte(encoded), &launches); err != nil {
+			return "", fmt.Errorf("invalid package launch paths")
+		}
+		for _, launch := range launches {
+			if !filepath.IsAbs(launch) || strings.ContainsFunc(launch, unicode.IsControl) {
+				return "", fmt.Errorf("package launch paths must be absolute filenames")
+			}
+			if err := rejectLaunchConflict(workspace, launch); err != nil {
+				return "", err
+			}
+			protected = append(protected, launch)
+		}
+	}
 	buildParent, err := canonicalPath(os.TempDir())
 	if err != nil {
 		return "", err
@@ -114,13 +146,8 @@ func workspacePath(path string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		parent, err := canonicalPath(filepath.Dir(invoked))
-		if err != nil {
+		if err := rejectLaunchConflict(workspace, invoked); err != nil {
 			return "", err
-		}
-		invoked = filepath.Join(parent, filepath.Base(invoked))
-		if containsPath(workspace, invoked) || containsPath(invoked, workspace) {
-			return "", fmt.Errorf("workspace %s conflicts with executable path %s. Use a global install of sandboxed-agents outside the workspace.", workspace, invoked)
 		}
 	}
 	temporary, err := os.ReadDir(os.TempDir())

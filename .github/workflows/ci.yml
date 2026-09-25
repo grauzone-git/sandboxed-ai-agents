@@ -58,6 +58,8 @@ jobs:
           for suite in ('test-list.py', 'test-ssh-opt-in.py', 'test-workspace-storage.py'):
               subprocess.run([sys.executable, '-B', 'tests/' + suite], env=env, check=True)
           subprocess.run(['node', 'tests/test-host-commands.cjs'], env=env, check=True)
+          env['SANDBOX_TEST_PACKAGE_BINARY'] = str(root / 'sandboxed-agents.exe')
+          subprocess.run([sys.executable, '-B', 'tests/test-packages.py'], env=env, check=True)
 
   cross-build:
     runs-on: ubuntu-latest

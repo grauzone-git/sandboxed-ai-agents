@@ -1,0 +1,13 @@
+{
+  "name": "sandboxed-agents",
+  "version": "0.0.0",
+  "description": "Rootless Podman sandboxes for coding agents",
+  "license": "MIT",
+  "repository": "github:grauzone-git/sandboxed-ai-agents",
+  "os": ["linux", "win32"],
+  "cpu": ["x64", "arm64"],
+  "bin": {"sandboxed-agents": "cli.cjs"},
+  "scripts": {"postinstall": "node install.cjs"},
+  "files": ["cli.cjs", "install.cjs", "verify.cjs", "artifacts/", "README.md"],
+  "engines": {"node": ">=18"}
+}

@@ -250,6 +250,7 @@ Start with the [Linux quick guide](docs/QUICKGUIDE-LINUX.md) or the
 | Configure the image, .NET, npm, Playwright, Git, Azure | [Development toolchain](docs/TOOLCHAIN.md) |
 | Configure sandbox Azure login on Linux or native Windows | [Azure setup](docs/AZURE-SETUP.md) |
 | Understand isolation, desktop UIs, and remote workers | [Architecture](docs/ARCHITECTURE.md) |
+| Install executable release packages or prepare a release | [Executable releases and packages](docs/RELEASES.md) |
 | Know why it is built this way before changing it | [Project context](CONTEXT.md) |
 | Work on this repository as an AI coding agent | [AGENT.md](AGENT.md) |
 

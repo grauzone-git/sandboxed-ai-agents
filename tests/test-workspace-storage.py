@@ -115,6 +115,25 @@ else: sys.exit('Unexpected call: ' + repr(args))
         self.assertEqual(json.loads(self.state.read_text()), {})
         self.assertFalse(any(call[0] == 'run' for call in self.calls()))
 
+    def test_packaging_scripts_and_link_targets_are_protected_before_provisioning(self):
+        if self.executable:
+            self.skipTest("Checkout source protection applies to the script launcher.")
+        packaging = self.checkout / 'packaging'
+        packaging.mkdir()
+        script = packaging / 'prepare.py'
+        script.write_text('# Host packaging script')
+        external = self.root / 'external-packaging'
+        external.mkdir()
+        installer = external / 'install.cjs'
+        installer.write_text('// Host package installer')
+        (packaging / 'install.cjs').symlink_to(installer)
+        for workspace in (packaging, script, external, installer):
+            with self.subTest(workspace=workspace):
+                result = self.cli('demo', 'up', str(workspace), '--agents', 'codex', success=False)
+                self.assertIn('host SSH/controller', result.stderr)
+        self.assertEqual(json.loads(self.state.read_text()), {})
+        self.assertFalse(any(call[0] in ('run', 'volume') for call in self.calls()))
+
     def test_live_azure_validation_files_are_protected_before_provisioning(self):
         if self.executable:
             self.skipTest("Checkout source protection applies to the script launcher.")
