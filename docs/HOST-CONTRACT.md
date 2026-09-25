@@ -1,0 +1,54 @@
+# Host behavior contract
+
+The host command, list, SSH opt-in, and workspace storage suites invoke the
+public launcher with fake Podman and SSH processes and isolated homes. They
+check exit status, output, native-command arguments, and filesystem effects.
+They require no running Podman service, network access, or credentials.
+
+By default each suite copies the checkout scripts into its temporary fixture
+and runs that copy. Run the contract with:
+
+```sh
+node tests/test-host-commands.cjs
+python3 -B tests/test-list.py
+python3 -B tests/test-ssh-opt-in.py
+python3 -B tests/test-workspace-storage.py
+```
+
+Set `SANDBOX_TEST_LAUNCHER` to a JSON array to select another launcher. The first
+element is the executable; further elements are literal arguments. Use absolute
+paths because the suites change working directories. Shell strings are not
+evaluated. For example:
+
+```sh
+export SANDBOX_TEST_LAUNCHER='["/opt/sandboxed-agents/sandboxed-agents"]'
+python3 -B tests/test-list.py
+```
+
+`{checkout}` in an argument expands to the suite's temporary checkout. This
+allows wrappers around the existing scripts:
+
+```sh
+export SANDBOX_TEST_LAUNCHER='["bash", "{checkout}/sandbox"]'
+python3 -B tests/test-workspace-storage.py
+unset SANDBOX_TEST_LAUNCHER
+```
+
+The helper runs the selected launcher's `list` command against a separate fake
+Podman and reads the `io.sandboxed-agents.project` label filter it requests.
+Fixtures use that discovered value for owned containers and volumes. Discovery
+fails if the launcher fails or does not provide one nonempty owner filter;
+there is no fallback to checkout ownership. Discovery calls stay outside the
+scenario logs, so assertions about validation before Podman still apply.
+
+The JavaScript suite uses `python3` to run the shared discovery helper. Set
+`PYTHON` to another Python executable if needed. The override applies to these
+four suites only; other regression suites continue testing their existing
+components. `./tests/run` runs all offline tests, including this contract.
+
+The contract initially retains the scripts' command behavior. As the executable
+issues implement the intentional changes in #36, extend the relevant scenarios
+for state-directory SSH files, executable workspace protection, and direct
+Podman sessions. Passing a subset for a preview does not establish full parity.
+The current fake executables use POSIX shebangs. Windows contract execution is
+part of #39 and #43; this change does not claim Windows execution coverage.

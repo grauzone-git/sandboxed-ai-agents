@@ -11,6 +11,11 @@ selected AI coding agents inside it. The code is Bash, Python, and CommonJS
 JavaScript, with no package manager, no build step, and no third-party
 dependencies. If you find yourself adding a dependency, stop and reconsider.
 
+The checkout launchers are frozen to bug and security fixes. New host features
+go into the standalone executable described in
+[#36](https://github.com/grauzone-git/sandboxed-ai-agents/issues/36).
+Follow the [implementation order](docs/EXECUTABLE-PLAN.md) during the handover.
+
 ## Commands
 
 ```bash
@@ -95,6 +100,10 @@ Python tests use `unittest`, a `tempfile.TemporaryDirectory`, an isolated
 `HOME`, and a fake `podman` executable placed on `PATH` that logs its arguments
 to a JSONL file. JavaScript tests use `node:assert/strict` and no framework.
 Every new externally visible behaviour needs a test in the matching suite:
+
+The shared host contract accepts a launcher through `SANDBOX_TEST_LAUNCHER`.
+See [the contract instructions](docs/HOST-CONTRACT.md) when testing the scripts
+or standalone executable.
 
 | Suite | Covers |
 |---|---|

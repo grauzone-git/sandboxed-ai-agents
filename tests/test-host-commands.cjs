@@ -30,19 +30,30 @@ fs.appendFileSync(process.env.TEST_TRANSPORT_LOG, JSON.stringify({tool: require(
 `;
   write(path.join(mockBin, 'podman'), recorder + `
 if (args[0] === 'info') console.log('true');
-else if (args[0] === 'inspect') console.log(process.env.TEST_OWNER || process.env.TEST_PROJECT);
+else if (args[0] === 'inspect') console.log(process.env.TEST_FOREIGN_OWNER || process.env.TEST_OWNER);
 else if (args[0] === 'exec' && (args.includes('login') || args.includes('setup'))) process.exit(Number(process.env.TEST_LOGIN_EXIT || 0));
 else if (args[0] === 'exec' && args.includes('service') && args.at(-1) === 'start') process.exit(0);
 else if (args[0] === 'restart') process.exit(0);
 else if (process.env.TEST_REMOVE && ['stop', 'rm'].includes(args[0])) process.exit(args[0] === process.env.TEST_REMOVE_FAIL ? 1 : 0);
-else if (process.env.TEST_REMOVE && args[0] === 'volume' && args[1] === 'inspect') console.log(process.env.TEST_FOREIGN_VOLUME && args.at(-1).endsWith('-sshd') ? '/foreign' : process.env.TEST_PROJECT);
+else if (process.env.TEST_REMOVE && args[0] === 'volume' && args[1] === 'inspect') console.log(process.env.TEST_FOREIGN_VOLUME && args.at(-1).endsWith('-sshd') ? '/foreign' : process.env.TEST_OWNER);
 else if (process.env.TEST_REMOVE && args[0] === 'volume' && args[1] === 'exists' && args.at(-1).endsWith('-workspace')) process.exit(1);
 else if (process.env.TEST_REMOVE && args[0] === 'volume' && ['exists', 'rm'].includes(args[1])) process.exit(args[1] === 'rm' && process.env.TEST_VOLUME_REMOVE_FAIL ? 1 : 0);
 else process.exit(1); // No image/container: stop before creation in positive parsing tests.
 `, 0o755);
   write(path.join(mockBin, 'ssh'), recorder + '\nif (process.env.TEST_START_FAILED && args.at(-1) === "-s") process.exit(1);\n', 0o755);
-  const cli = (args, extraEnv = {}) => spawnSync(path.join(checkout, 'sandbox'), args, {
-    cwd: checkout, encoding: 'utf8', env: { ...process.env, HOME: hostHome, PATH: `${mockBin}:${process.env.PATH}`, TEST_PROJECT: checkout, TEST_TRANSPORT_LOG: transportLog, ...extraEnv },
+  const env = {
+    ...process.env, HOME: hostHome, USERPROFILE: hostHome,
+    XDG_STATE_HOME: path.join(fixture, 'state'), LOCALAPPDATA: path.join(fixture, 'local'),
+    PATH: `${mockBin}${path.delimiter}${process.env.PATH}`, TEST_TRANSPORT_LOG: transportLog,
+  };
+  const discovery = spawnSync(process.env.PYTHON || 'python3', ['-B', path.join(__dirname, 'contract_launcher.py'), checkout], {
+    env, encoding: 'utf8',
+  });
+  assert.equal(discovery.status, 0, discovery.stderr);
+  const launcher = JSON.parse(discovery.stdout);
+  env.TEST_OWNER = launcher.owner;
+  const cli = (args, extraEnv = {}) => spawnSync(launcher.command[0], [...launcher.command.slice(1), ...args], {
+    cwd: checkout, encoding: 'utf8', env: { ...env, ...extraEnv },
   });
   for (const args of [
     ['demo', 'up'], ['demo', 'up', '--agents', 'none'], ['demo', 'up', '--agents', ''],
@@ -291,7 +302,7 @@ else process.exit(1); // No image/container: stop before creation in positive pa
     assert.equal(fs.readFileSync(workspaceMarker, 'utf8'), 'keep workspace');
     fs.unlinkSync(transportLog);
   }
-  for (const failure of [{ TEST_REMOVE_FAIL: 'stop' }, { TEST_REMOVE_FAIL: 'rm' }, { TEST_OWNER: '/foreign' }, { TEST_FOREIGN_VOLUME: '1' }]) {
+  for (const failure of [{ TEST_REMOVE_FAIL: 'stop' }, { TEST_REMOVE_FAIL: 'rm' }, { TEST_FOREIGN_OWNER: '/foreign' }, { TEST_FOREIGN_VOLUME: '1' }]) {
     seedRemoval();
     const before = fs.readFileSync(userConfig, 'utf8');
     assert.notEqual(cli(['demo', 'remove', '--volumes'], { TEST_REMOVE: '1', ...failure }).status, 0);

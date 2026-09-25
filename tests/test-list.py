@@ -7,6 +7,8 @@ import subprocess
 import tempfile
 import unittest
 
+from contract_launcher import describe_launcher
+
 PROJECT = Path(__file__).resolve().parents[1]
 LABEL = 'io.sandboxed-agents.project'
 
@@ -70,18 +72,24 @@ class ListTests(unittest.TestCase):
         self.log = self.root / 'podman.jsonl'
         self.containers = self.root / 'containers.json'
         self.env = {**os.environ, 'HOME': str(self.root / 'home'), 'PATH': f'{bin_dir}:{os.environ["PATH"]}',
+                    'USERPROFILE': str(self.root / 'home'), 'LOCALAPPDATA': str(self.root / 'local'),
+                    'XDG_STATE_HOME': str(self.root / 'state'),
                     'TEST_PODMAN_LOG': str(self.log), 'TEST_CONTAINERS': str(self.containers)}
+        launcher = describe_launcher(self.checkout, self.env)
+        self.command = launcher['command']
+        self.owner = launcher['owner']
+        self.env['TEST_OWNER'] = self.owner
 
     def cli(self, *args, containers=()):
         self.containers.write_text(json.dumps(list(containers)))
-        return subprocess.run([str(self.checkout / 'sandbox'), *args], env=self.env,
-                              text=True, capture_output=True)
+        return subprocess.run([*self.command, *args], env=self.env,
+                              cwd=self.checkout, text=True, capture_output=True, timeout=20)
 
     def podman_calls(self):
         return [json.loads(line) for line in self.log.read_text().splitlines()] if self.log.exists() else []
 
     def test_lists_owned_sandboxes_with_state_workspace_port_and_agents(self):
-        owner = str(self.checkout)
+        owner = self.owner
         result = self.cli('list', containers=[
             container('agent02', owner, running=False, port=2223, workspace='/work/agent02'),
             container('agent01', owner, agents={'codex': 'latest', 'claude': 'latest'}),
@@ -99,7 +107,7 @@ class ListTests(unittest.TestCase):
         self.assertNotIn('unlabelled', result.stdout)
 
     def test_sandbox_removed_while_listing_is_skipped(self):
-        owner = str(self.checkout)
+        owner = self.owner
         result = self.cli('list', containers=[container('agent01', owner, agents={}),
                                               {**container('agent02', owner), 'vanished': True}])
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -107,7 +115,7 @@ class ListTests(unittest.TestCase):
                          [['agent01', 'running', '2222', 'none', 'agent01-workspace']])
 
     def test_stopped_sandboxes_are_not_started_or_modified(self):
-        self.cli('list', containers=[container('agent02', str(self.checkout), running=False)])
+        self.cli('list', containers=[container('agent02', self.owner, running=False)])
         commands = {call[0] if call[0] != 'container' else ' '.join(call[:2]) for call in self.podman_calls()}
         self.assertLessEqual(commands, {'info', 'ps', 'container inspect'})
 
@@ -117,7 +125,7 @@ class ListTests(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), 'No sandboxes owned by this checkout.')
 
     def test_unreadable_agent_selection_is_reported_as_unknown(self):
-        result = self.cli('list', containers=[container('agent01', str(self.checkout))])
+        result = self.cli('list', containers=[container('agent01', self.owner)])
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.splitlines()[1].split()[3], 'unknown')
 

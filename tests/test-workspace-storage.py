@@ -7,6 +7,8 @@ import subprocess
 import tempfile
 import unittest
 
+from contract_launcher import describe_launcher
+
 PROJECT = Path(__file__).resolve().parents[1]
 
 
@@ -29,8 +31,10 @@ class WorkspaceStorageTests(unittest.TestCase):
         self.seccomp = self.root / 'seccomp.json'
         self.seccomp.write_text(json.dumps({'defaultAction': 'SCMP_ACT_ERRNO', 'syscalls': []}))
         self.env = {**os.environ, "HOME": str(self.home),
+                    'USERPROFILE': str(self.home), 'LOCALAPPDATA': str(self.root / 'local'),
+                    'XDG_STATE_HOME': str(self.root / 'state'),
                     "PATH": f"{self.bin}:{os.environ['PATH']}",
-                    "TEST_PROJECT": str(self.checkout), "TEST_LOG": str(self.log),
+                    "TEST_LOG": str(self.log),
                     "TEST_VOLUMES": str(self.state), "TEST_SECCOMP": str(self.seccomp)}
         (self.bin / "id").write_text("#!/bin/sh\nprintf '1000\\n'\n")
         (self.bin / "podman").write_text('''#!/usr/bin/env python3
@@ -44,7 +48,7 @@ volumes = json.loads(state.read_text())
 if args[0] == 'info':
     print(json.dumps({'seccompProfilePath': os.environ['TEST_SECCOMP']}) if args[-1] == '{{json .Host.Security}}' else 'true')
 elif args[:2] == ['container', 'exists']: sys.exit(1)
-elif args[0] == 'inspect': print(os.environ['TEST_PROJECT'])
+elif args[0] == 'inspect': print(os.environ['TEST_OWNER'])
 elif args[:2] == ['image', 'inspect']: print('a' * 64)
 elif args[0] == 'build':
     if os.environ.get('TEST_BUILD_FAIL'): sys.exit(1)
@@ -64,9 +68,13 @@ else: sys.exit('Unexpected call: ' + repr(args))
 ''')
         for command in self.bin.iterdir():
             command.chmod(0o755)
+        launcher = describe_launcher(self.checkout, self.env)
+        self.command = launcher['command']
+        self.owner = launcher['owner']
+        self.env['TEST_OWNER'] = self.owner
 
     def cli(self, *args, success=True, env=None):
-        result = subprocess.run([str(self.checkout / "sandbox"), *args],
+        result = subprocess.run([*self.command, *args],
                                 cwd=self.checkout, env={**self.env, **(env or {})},
                                 capture_output=True, text=True, timeout=20)
         self.assertEqual(result.returncode == 0, success, result.stdout + result.stderr)
@@ -106,6 +114,8 @@ else: sys.exit('Unexpected call: ' + repr(args))
         self.assertIn("127.0.0.1:2222:2222", run)
         self.assertEqual(set(json.loads(self.state.read_text())),
                          {"agent01-workspace", "agent01-home", "agent01-sshd"})
+        self.assertEqual(set(json.loads(self.state.read_text()).values()), {self.owner})
+        self.assertIn('io.sandboxed-agents.project=' + self.owner, run)
         self.assertFalse((self.checkout / "workspaces").exists())
         self.assertFalse((self.home / ".ssh").exists())
         chown = next(call for call in self.calls() if "/bin/chown" in call)

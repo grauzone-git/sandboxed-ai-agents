@@ -7,6 +7,8 @@ import subprocess
 import tempfile
 import unittest
 
+from contract_launcher import describe_launcher
+
 
 PROJECT = Path(__file__).resolve().parents[1]
 
@@ -33,7 +35,9 @@ class SSHOptInTests(unittest.TestCase):
         self.authorized = self.root / "authorized_keys"
         self.env = {
             **os.environ, "HOME": str(self.home), "PATH": f"{self.bin}:{os.environ['PATH']}",
-            "TEST_PROJECT": str(self.checkout), "TEST_LOG": str(self.log),
+            'USERPROFILE': str(self.home), 'LOCALAPPDATA': str(self.root / 'local'),
+            'XDG_STATE_HOME': str(self.root / 'state'),
+            "TEST_LOG": str(self.log),
             "TEST_HOSTKEY": str(self.hostkey) + ".pub", "TEST_AUTHORIZED": str(self.authorized),
         }
         (self.bin / "id").write_text("#!/bin/sh\nprintf '1000\\n'\n")
@@ -45,7 +49,7 @@ args = sys.argv[1:]
 with open(os.environ['TEST_LOG'], 'a') as log:
     log.write(json.dumps(args) + '\\n')
 if args[0] == 'info': print('true')
-elif args[0] == 'inspect': print(os.environ['TEST_PROJECT'])
+elif args[0] == 'inspect': print(os.environ['TEST_OWNER'])
 elif args[:2] in (['container', 'exists'], ['volume', 'exists']): sys.exit(1)
 elif args[0] == 'port': print('127.0.0.1:2222')
 elif args[0] == 'exec' and args[-1] == '/var/lib/agent-sshd/ssh_host_ed25519_key.pub' and '/bin/cat' in args:
@@ -56,9 +60,13 @@ elif args[0] in ('exec', 'run', 'start', 'image', 'volume'): pass
 else: sys.exit('Unexpected Podman call: ' + repr(args))
 ''')
         (self.bin / "podman").chmod(0o755)
+        launcher = describe_launcher(self.checkout, self.env)
+        self.command = launcher['command']
+        self.owner = launcher['owner']
+        self.env['TEST_OWNER'] = self.owner
 
     def cli(self, *args, success=True):
-        result = subprocess.run([str(self.checkout / "sandbox"), *args], cwd=self.checkout,
+        result = subprocess.run([*self.command, *args], cwd=self.checkout,
                                 env=self.env, capture_output=True, text=True, timeout=20)
         if success:
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
