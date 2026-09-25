@@ -93,3 +93,22 @@ State belongs under `$XDG_STATE_HOME/sandboxed-agents`, defaulting to
 Creation does not need to write state there yet. Windows machine/path alias
 validation remains part of #43; offline tests do not establish live Windows
 bind support.
+
+## Nested Podman
+
+On Linux, add `--capabilities podman` to `up` to install the nested Podman image
+layer and permit inner rootless containers. The default is `none`. The derived
+image uses an immutable base image ID and the bundled capability recipe.
+
+The capability permits `/dev/fuse`, `/dev/net/tun`, mapping helpers, and the
+namespace operations described in [ARCHITECTURE.md](ARCHITECTURE.md). It removes
+`no-new-privileges`, disables SELinux/AppArmor separation, and unmasks kernel
+paths. It does not enable privileged mode or mount host sockets. Runtime state
+uses a tmpfs at `/run/user/1000`; persistent inner storage remains in the home
+volume.
+
+The generated seccomp policy retains the engine's deny-by-default host rules
+except for the required hostname and namespace calls. It is saved under
+`<state>/seccomp/<version>/nested-podman.json`, with a private directory and file,
+and replaced when its content differs. Nothing is written beside the executable.
+Windows guest profile staging remains part of #43.

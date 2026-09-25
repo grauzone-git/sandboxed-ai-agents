@@ -20,6 +20,9 @@ func fakeLifecyclePodman() {
 	}
 	json.NewEncoder(f).Encode(args)
 	f.Close()
+	if fakeCapabilityPodman(args) {
+		return
+	}
 	switch args[0] {
 	case "info":
 		fmt.Print("true")

@@ -32,7 +32,7 @@ func run(args []string) error {
 	}
 	switch command {
 	case "help":
-		fmt.Fprintln(os.Stdout, "Usage: sandboxed-agents NAME COMMAND [PARAMETERS]\n       sandboxed-agents version|list\n       sandboxed-agents build [additional Podman build arguments]\n\nCommand names cannot be used as sandbox names.\nThis preview implements version, build, list, up, start, stop, restart, remove, shell, check, and check-full.\n       sandboxed-agents NAME up [WORKSPACE [PORT]] --agents LIST [--tools LIST] [--cpus N] [--memory SIZE] [--ssh-port PORT]\n       sandboxed-agents NAME start|stop|restart|shell|check|check-full\n       sandboxed-agents NAME remove [--volumes]\nOther commands are not available in this preview.\nSANDBOX_CONTROLLER selects the owner group (default: default).")
+		fmt.Fprintln(os.Stdout, "Usage: sandboxed-agents NAME COMMAND [PARAMETERS]\n       sandboxed-agents version|list\n       sandboxed-agents build [additional Podman build arguments]\n\nCommand names cannot be used as sandbox names.\nThis preview implements version, build, list, up, start, stop, restart, remove, shell, check, and check-full.\n       sandboxed-agents NAME up [WORKSPACE [PORT]] --agents LIST [--tools LIST] [--cpus N] [--memory SIZE] [--ssh-port PORT] [--capabilities podman|none]\n       sandboxed-agents NAME start|stop|restart|shell|check|check-full\n       sandboxed-agents NAME remove [--volumes]\nOther commands are not available in this preview.\nSANDBOX_CONTROLLER selects the owner group (default: default).")
 		return nil
 	case "version":
 		fmt.Fprintf(os.Stdout, "sandboxed-agents version %s\ncommit %s\nassets %s\n", Version, Commit, sandboxassets.Hash())

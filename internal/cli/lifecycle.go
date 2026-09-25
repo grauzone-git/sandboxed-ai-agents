@@ -18,8 +18,8 @@ import (
 )
 
 type createOptions struct {
-	agents, tools, port, cpus, memory, workspace string
-	bind                                         bool
+	agents, tools, port, cpus, memory, workspace, capabilities string
+	bind                                                       bool
 }
 
 func lifecycle(command, name string, args []string) error {
@@ -74,7 +74,7 @@ func envDefault(key, fallback string) string {
 }
 
 func parseCreate(args []string) (createOptions, error) {
-	options := createOptions{port: "2222", cpus: envDefault("SANDBOX_CPUS", "4"), memory: envDefault("SANDBOX_MEMORY", "8g")}
+	options := createOptions{capabilities: "none", port: "2222", cpus: envDefault("SANDBOX_CPUS", "4"), memory: envDefault("SANDBOX_MEMORY", "8g")}
 	seen := map[string]bool{}
 	for i := 0; i < len(args); i++ {
 		flag := args[i]
@@ -89,7 +89,7 @@ func parseCreate(args []string) (createOptions, error) {
 			seen["--ssh-port"] = true
 			continue
 		}
-		if !slices.Contains([]string{"--agents", "--tools", "--ssh-port", "--cpus", "--memory"}, flag) {
+		if !slices.Contains([]string{"--agents", "--tools", "--ssh-port", "--cpus", "--memory", "--capabilities"}, flag) {
 			return options, fmt.Errorf("unknown up option: %s", flag)
 		}
 		if seen[flag] || i+1 == len(args) {
@@ -109,10 +109,15 @@ func parseCreate(args []string) (createOptions, error) {
 			options.cpus = value
 		case "--memory":
 			options.memory = value
+		case "--capabilities":
+			options.capabilities = value
 		}
 	}
 	if options.agents == "" || options.agents == "none" {
 		return options, fmt.Errorf("creating a sandbox requires --agents with at least one agent (or all)")
+	}
+	if err := validateCapabilities(options.capabilities); err != nil {
+		return options, err
 	}
 	var err error
 	if options.agents, err = selection(options.agents, "agents"); err != nil {
@@ -300,6 +305,10 @@ func createSandbox(name string, options createOptions) error {
 			missing = append(missing, volume)
 		}
 	}
+	image, runtimeArgs, err := prepareCapabilities(imageName(), options.capabilities)
+	if err != nil {
+		return err
+	}
 	if options.bind {
 		if err := os.MkdirAll(options.workspace, 0755); err != nil {
 			return err
@@ -310,7 +319,7 @@ func createSandbox(name string, options createOptions) error {
 			return err
 		}
 	}
-	args := createArguments(name, options)
+	args := createArguments(name, options, image, runtimeArgs)
 	if err := podman(args...); err != nil {
 		return err
 	}
@@ -383,11 +392,20 @@ func checkSandbox(name string, full bool) error {
 		return fmt.Errorf("invalid mount inventory: %w", err)
 	}
 	expected := map[string]string{"/workspace": name + "-workspace", "/home/agent": name + "-home", "/var/lib/agent-sshd": name + "-sshd"}
+	for _, mount := range mounts {
+		if mount.Destination == "/run/user/1000" {
+			expected[mount.Destination] = ""
+		}
+	}
 	if len(mounts) != len(expected) {
 		return fmt.Errorf("unexpected mount inventory")
 	}
 	for _, mount := range mounts {
 		volume, ok := expected[mount.Destination]
+		if ok && mount.Destination == "/run/user/1000" && mount.Type == "tmpfs" {
+			delete(expected, mount.Destination)
+			continue
+		}
 		if ok && mount.Destination == "/workspace" && mount.Type == "bind" {
 			if _, err := workspacePath(mount.Source); err != nil {
 				return err
@@ -422,10 +440,12 @@ func waitForEntrypoint(name string) error {
 	}
 }
 
-func createArguments(name string, options createOptions) []string {
+func createArguments(name string, options createOptions, image string, runtimeArgs []string) []string {
 	workspace := name + "-workspace:/workspace"
 	if options.bind {
 		workspace = options.workspace + ":/workspace:Z"
 	}
-	return []string{"run", "--detach", "--name", name, "--hostname", name, "--label", ownerLabel + "=" + owner(), "--label", versionLabel + "=" + Version, "--label", "io.sandboxed-agents.capabilities=none", "--userns=keep-id:uid=1000,gid=1000", "--user", "0:0", "--security-opt=no-new-privileges", "--network=pasta:--no-map-gw", "--memory=" + options.memory, "--cpus=" + options.cpus, "--pids-limit=2048", "--shm-size=1g", "--publish", "127.0.0.1:" + options.port + ":2222", "--volume", workspace, "--volume", name + "-home:/home/agent", "--volume", name + "-sshd:/var/lib/agent-sshd", imageName()}
+	args := []string{"run", "--detach", "--name", name, "--hostname", name, "--label", ownerLabel + "=" + owner(), "--label", versionLabel + "=" + Version, "--label", capabilitiesLabel + "=" + options.capabilities, "--userns=keep-id:uid=1000,gid=1000", "--user", "0:0"}
+	args = append(args, runtimeArgs...)
+	return append(args, "--network=pasta:--no-map-gw", "--memory="+options.memory, "--cpus="+options.cpus, "--pids-limit=2048", "--shm-size=1g", "--publish", "127.0.0.1:"+options.port+":2222", "--volume", workspace, "--volume", name+"-home:/home/agent", "--volume", name+"-sshd:/var/lib/agent-sshd", image)
 }

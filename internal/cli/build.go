@@ -10,7 +10,7 @@ import (
 	sandboxassets "github.com/grauzone-git/sandboxed-ai-agents"
 )
 
-func build(args []string) (result error) {
+func withBuildContext(action func(string) error) (result error) {
 	context, err := os.MkdirTemp("", "sandboxed-agents-build-")
 	if err != nil {
 		return err
@@ -42,8 +42,14 @@ func build(args []string) (result error) {
 	if err != nil {
 		return err
 	}
-	command := []string{"build", "--pull=always", "-t", imageName(), "-f", filepath.Join(context, "Containerfile")}
-	command = append(command, args...)
-	command = append(command, "--label", versionLabel+"="+Version, context)
-	return podman(command...)
+	return action(context)
+}
+
+func build(args []string) error {
+	return withBuildContext(func(context string) error {
+		command := []string{"build", "--pull=always", "-t", imageName(), "-f", filepath.Join(context, "Containerfile")}
+		command = append(command, args...)
+		command = append(command, "--label", versionLabel+"="+Version, context)
+		return podman(command...)
+	})
 }
