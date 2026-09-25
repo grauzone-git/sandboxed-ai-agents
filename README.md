@@ -22,9 +22,10 @@ persistent terminal.
 
 ## What's inside
 
-The image is Debian 12 slim with Node.js 24 and npm, .NET SDKs 9 and 10, Git,
-GitHub CLI, Azure CLI with the DevOps extension, PowerShell, tmux, OpenSSH, and
-the system dependencies for headless Playwright runs against Chromium, Firefox, and Edge.
+The image is Debian 12 slim with Node.js 24 and npm, .NET SDKs 9 and 10,
+Python 3, Git, GitHub CLI, Azure CLI with the DevOps extension, PowerShell,
+tmux, OpenSSH, and the system dependencies for headless Playwright runs against
+Chromium, Firefox, and Edge.
 Everything above ships in the shared image; agents and dashboards install per
 sandbox, into that sandbox's own home volume.
 

@@ -13,6 +13,7 @@ dotnet --list-sdks | grep -E '^10\.'
 node --version
 npm --version
 git --version
+test "$(command -v python3)" = /usr/bin/python3
 python3 --version
 pwsh -NoLogo -NoProfile -Command '$PSVersionTable.PSVersion.ToString()'
 az version

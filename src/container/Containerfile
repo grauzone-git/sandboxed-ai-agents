@@ -26,7 +26,7 @@ RUN apt-get update \
        python3 python3-venv python3-pip \
     && case "$WITH_NATIVE_BUILD_TOOLS" in \
          0) ;; \
-         1) DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential pkg-config ;; \
+         1) DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential pkg-config python3-dev ;; \
          *) echo 'WITH_NATIVE_BUILD_TOOLS must be 0 or 1' >&2; exit 1 ;; \
        esac \
     && npm install --global --prefix /opt/agent-tools \

@@ -105,6 +105,7 @@ Every new externally visible behaviour needs a test in the matching suite:
 | `tests/test-*-ssh-config.py`, `test-ssh-opt-in.py` | SSH file generation, Include handling, cleanup |
 | `tests/test-validators.py` | Selection and mount validation |
 | `tests/test-list.py` | Listing checkout-owned sandboxes |
+| `tests/test-image-recipe.py` | Image packages, recorded versions, smoke checks |
 
 `tests/check-sources.py` parses every file under `src/` and `tests/`, validates
 the JSON catalogs, and resolves local markdown links in `README.md` and
