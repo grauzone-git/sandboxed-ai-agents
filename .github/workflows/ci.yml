@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: make test
+
+  executable:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+      - run: go test ./...
+      - name: Build executable and fake command relay
+        run: |
+          go build -o sandboxed-agents.exe ./cmd/sandboxed-agents
+          go build -o fake-command.exe ./tests/fake-command
+      - name: Run shared list contract against executable
+        shell: python
+        run: |
+          import json, os, pathlib, subprocess, sys
+          root = pathlib.Path.cwd()
+          env = dict(os.environ)
+          env['SANDBOX_TEST_LAUNCHER'] = json.dumps([str(root / 'sandboxed-agents.exe')])
+          env['SANDBOX_TEST_FAKE_COMMAND'] = str(root / 'fake-command.exe')
+          subprocess.run([sys.executable, '-B', 'tests/test-list.py'], env=env, check=True)
+
+  cross-build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - {os: linux, arch: amd64}
+          - {os: linux, arch: arm64}
+          - {os: windows, arch: amd64}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - run: go build -trimpath -o sandboxed-agents-${{ matrix.target.os }}-${{ matrix.target.arch }} ./cmd/sandboxed-agents
+        env:
+          CGO_ENABLED: '0'
+          GOOS: ${{ matrix.target.os }}
+          GOARCH: ${{ matrix.target.arch }}

@@ -90,6 +90,17 @@ else: sys.exit('Unexpected call: ' + repr(args))
         self.assertEqual(json.loads(self.state.read_text()), {})
         self.assertFalse(any(call[0] == 'run' for call in self.calls()))
 
+    def test_go_controller_sources_are_protected_before_provisioning(self):
+        for relative in ('go.mod', 'assets.go', 'cmd/sandboxed-agents/main.go', 'internal/cli/cli.go',
+                         'sandboxed-agents', 'sandboxed-agents.exe'):
+            entry = self.checkout / relative
+            entry.parent.mkdir(parents=True, exist_ok=True)
+            entry.write_text('// controller fixture')
+            self.cli('demo', 'up', str(entry.parent if '/' in relative else entry),
+                     '--agents', 'codex', success=False)
+        self.assertEqual(json.loads(self.state.read_text()), {})
+        self.assertFalse(any(call[0] == 'run' for call in self.calls()))
+
     def test_live_azure_validation_files_are_protected_before_provisioning(self):
         tests = self.checkout / 'tests'
         tests.mkdir()

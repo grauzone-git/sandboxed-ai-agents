@@ -2,3 +2,6 @@
 workspaces/
 __pycache__/
 *.py[cod]
+/sandboxed-agents
+/sandboxed-agents.exe
+/fake-command.exe

@@ -7,9 +7,10 @@ first.
 ## What this repository is
 
 A launcher that gives each workspace its own rootless Podman container with
-selected AI coding agents inside it. The code is Bash, Python, and CommonJS
-JavaScript, with no package manager, no build step, and no third-party
-dependencies. If you find yourself adding a dependency, stop and reconsider.
+selected AI coding agents inside it. The existing scripts use Bash, Python,
+and CommonJS JavaScript without third-party dependencies. The standalone
+controller uses Go 1.23 or later and bundles the container build assets. Go
+dependencies are limited to the standard library and `golang.org/x/sys`.
 
 The checkout launchers are frozen to bug and security fixes. New host features
 go into the standalone executable described in
@@ -22,6 +23,8 @@ Follow the [implementation order](docs/EXECUTABLE-PLAN.md) during the handover.
 make check     # syntax, JSON catalogs, local documentation links
 make test      # the above plus every offline regression test
 ./tests/run    # identical to make test
+go test ./...  # standalone controller tests at the public CLI boundary
+go build ./cmd/sandboxed-agents
 ```
 
 `make test` needs Bash, Python 3.9+, Node.js, and OpenSSH client tools. It does

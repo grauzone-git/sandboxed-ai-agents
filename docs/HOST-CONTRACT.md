@@ -50,5 +50,15 @@ The contract initially retains the scripts' command behavior. As the executable
 issues implement the intentional changes in #36, extend the relevant scenarios
 for state-directory SSH files, executable workspace protection, and direct
 Podman sessions. Passing a subset for a preview does not establish full parity.
-The current fake executables use POSIX shebangs. Windows contract execution is
-part of #39 and #43; this change does not claim Windows execution coverage.
+The list contract supports Windows through a native fake-command relay:
+
+```powershell
+go build -o fake-command.exe ./tests/fake-command
+$env:SANDBOX_TEST_FAKE_COMMAND = (Resolve-Path ./fake-command.exe).Path
+$env:SANDBOX_TEST_LAUNCHER = ConvertTo-Json -Compress -InputObject @((Resolve-Path ./sandboxed-agents.exe).Path)
+python -B tests/test-list.py
+```
+
+CI runs this contract and `go test ./...` on Linux and Windows. The other
+Python/JavaScript contracts still use POSIX fake commands pending the later
+executable issues. Cross-compilation alone does not validate Windows behavior.

@@ -55,10 +55,14 @@ being asked is not acceptable, so it happens only with `--ssh-config`. Removal
 is the asymmetric case: it always cleans up the files it created, because
 leaving stale host entries and pinned keys behind is worse.
 
-**Ownership by checkout path.** Containers and volumes are labelled with the
+**Script ownership by checkout path.** Containers and volumes are labelled with the
 absolute path of the controller checkout (`io.sandboxed-agents.project`). That
 is what lets `update --all` and the ownership guards know which resources are
 theirs. It also means moving the checkout orphans existing sandboxes.
+
+The standalone executable preview uses a stable controller group instead:
+`default`, or the name in `SANDBOX_CONTROLLER`. A group and a checkout are
+separate owners. The executable does not implicitly adopt checkout resources.
 
 ## How the pieces fit
 
@@ -126,10 +130,11 @@ become marketing.
 
 ## Conventions worth knowing before you read code
 
-No third-party dependencies anywhere. No package.json, no requirements file, no
-lockfile, no formatter, no linter, no CI configuration. The whole test suite is
-`make test`, which runs offline against fake Podman executables and isolated
-home directories.
+The scripts have no third-party dependencies. The Go executable permits the
+standard library and `golang.org/x/sys`. `make test` runs the script regressions
+offline against fake Podman executables and isolated home directories;
+`go test ./...` runs the executable tests. GitHub Actions runs the script suite,
+Go tests, and executable list contract, and cross-builds the supported targets.
 
 Python is standard library only and targets 3.9. Bash is `set -euo pipefail`
 with a shared `fail` helper. JavaScript is CommonJS with factory functions that
@@ -147,7 +152,8 @@ is baked into `args.sh`, `remove-ssh-config.py`, and `update.py`, so the
 documentation matches reality. Renaming it would orphan the SSH setup of every
 existing sandbox and needs a migration path, not a find and replace.
 
-There is no CI.
+The executable is a preview. Its current command coverage and handover limits
+are documented in [docs/EXECUTABLE.md](docs/EXECUTABLE.md).
 
 Several integrations are documented from research rather than from use: the VS
 Code Agents window, T3 desktop, Kandev, remote workers, and ARM64 or otherwise

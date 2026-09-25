@@ -6,6 +6,8 @@ import subprocess
 import sys
 import tempfile
 
+from native_fakes import write_fake
+
 LABEL_FILTER = 'label=io.sandboxed-agents.project='
 
 
@@ -22,18 +24,14 @@ def discover_owner(command, checkout, env):
     with tempfile.TemporaryDirectory(prefix='sandbox-owner-') as temporary:
         root = Path(temporary)
         log = root / 'calls.jsonl'
-        podman = root / 'podman'
-        podman.write_text('''#!/usr/bin/env python3
+        write_fake(root, 'podman', '''#!/usr/bin/env python3
 import json, os, sys
 with open(os.environ['CONTRACT_OWNER_LOG'], 'a') as stream:
     stream.write(json.dumps(sys.argv[1:]) + '\\n')
 if sys.argv[1] == 'info': print('true')
 elif sys.argv[1] != 'ps': sys.exit('Unexpected ownership probe command')
 ''')
-        podman.chmod(0o755)
-        identity = root / 'id'
-        identity.write_text('#!/bin/sh\nprintf "1000\\n"\n')
-        identity.chmod(0o755)
+        write_fake(root, 'id', '#!/usr/bin/env python3\nprint(1000)\n')
         probe_env = {**env, 'PATH': str(root) + os.pathsep + env['PATH'],
                      'CONTRACT_OWNER_LOG': str(log), 'HOME': str(root / 'home'),
                      'USERPROFILE': str(root / 'home'), 'XDG_STATE_HOME': str(root / 'state'),

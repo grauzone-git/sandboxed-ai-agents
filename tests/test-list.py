@@ -8,6 +8,7 @@ import tempfile
 import unittest
 
 from contract_launcher import describe_launcher
+from native_fakes import write_fake
 
 PROJECT = Path(__file__).resolve().parents[1]
 LABEL = 'io.sandboxed-agents.project'
@@ -65,13 +66,11 @@ class ListTests(unittest.TestCase):
         self.checkout = self.checkout.resolve()
         bin_dir = self.root / 'bin'
         bin_dir.mkdir()
-        (bin_dir / 'podman').write_text(FAKE_PODMAN)
-        (bin_dir / 'podman').chmod(0o755)
-        (bin_dir / 'id').write_text('#!/bin/sh\nprintf "1000\\n"\n')
-        (bin_dir / 'id').chmod(0o755)
+        write_fake(bin_dir, 'podman', FAKE_PODMAN)
+        write_fake(bin_dir, 'id', '#!/usr/bin/env python3\nprint(1000)\n')
         self.log = self.root / 'podman.jsonl'
         self.containers = self.root / 'containers.json'
-        self.env = {**os.environ, 'HOME': str(self.root / 'home'), 'PATH': f'{bin_dir}:{os.environ["PATH"]}',
+        self.env = {**os.environ, 'HOME': str(self.root / 'home'), 'PATH': str(bin_dir) + os.pathsep + os.environ['PATH'],
                     'USERPROFILE': str(self.root / 'home'), 'LOCALAPPDATA': str(self.root / 'local'),
                     'XDG_STATE_HOME': str(self.root / 'state'),
                     'TEST_PODMAN_LOG': str(self.log), 'TEST_CONTAINERS': str(self.containers)}
@@ -122,7 +121,7 @@ class ListTests(unittest.TestCase):
     def test_empty_result_exits_successfully(self):
         result = self.cli('list', containers=[container('foreign', '/another/checkout')])
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout.strip(), 'No sandboxes owned by this checkout.')
+        self.assertRegex(result.stdout.strip(), r'^No sandboxes owned by (this checkout|controller [^.]+)\.$')
 
     def test_unreadable_agent_selection_is_reported_as_unknown(self):
         result = self.cli('list', containers=[container('agent01', self.owner)])
@@ -132,7 +131,7 @@ class ListTests(unittest.TestCase):
     def test_unexpected_arguments_are_rejected_before_podman(self):
         result = self.cli('list', 'agent01')
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('Usage: ./sandbox list', result.stderr)
+        self.assertRegex(result.stderr, r'Usage: (?:\./sandbox|sandboxed-agents) list')
         self.assertEqual(self.podman_calls(), [])
 
 
