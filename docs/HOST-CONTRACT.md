@@ -93,13 +93,16 @@ Check `$LASTEXITCODE` after each suite, because PowerShell continues after a
 failing native command. `PYTHON` makes the JavaScript suite use the same Python
 as the other three.
 
-CI runs `go test ./...` and all four contract suites against the binary on
-Linux and Windows, with `SANDBOX_TEST_FAKE_COMMAND` pointing at the relay. For
+CI runs `go test ./...`, all four contract suites, and `tests/test-packages.py`
+against the natively built binary on Linux and Windows, with
+`SANDBOX_TEST_FAKE_COMMAND` pointing at the relay.
+[HANDOVER.md](HANDOVER.md#evidence-so-far) records which commits have a passing
+run. For
 the binary, the host command suite runs its executable scenarios, including
 services, forwarding, and tool setup; `SANDBOX_TEST_CONTRACT_SLICE=management`
 still selects the narrower agent and tool management slice. Lifecycle and other
 source-specific branches in the suites keep the script expectations when the
-launcher is a checkout script. In the workspace storage suite, five
+launcher is a checkout script. In the workspace storage suite, six
 script-only checkout source protection checks are skipped for the binary, and
 two binary-only checks replace them: state, `~/.ssh`, and build-context
 protection, and the global-install suggestion for a project-local executable.

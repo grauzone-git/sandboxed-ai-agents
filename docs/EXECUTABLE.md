@@ -3,12 +3,62 @@
 The Go controller is being implemented under
 [#36](https://github.com/grauzone-git/sandboxed-ai-agents/issues/36). This preview
 implements `version`, `build`, `list`, sandbox lifecycle with optional workspace
-binds, sandbox image updates from #45, agent and tool management and sessions
-from #46, and services, forwarding, and tool setup (T3, Azure DevOps, and Azure,
-including host browser sign-in) from #47, and explicit adoption of
-checkout-owned sandboxes from #48. No release has been published.
+binds, image updates (#45), agent and tool management and sessions (#46),
+services, forwarding, and tool setup including host browser Azure sign-in
+(#47), explicit adoption of checkout-owned sandboxes (#48), and release
+packaging (#49). No release has been published. The executable has not been
+run against real Podman, SSH, or Azure; [HANDOVER.md](HANDOVER.md) lists the
+open gates. The checkout launchers in the [README](../README.md) remain the
+supported entry point until those gates close.
 
-Build with Go 1.23 or later:
+## Host prerequisites
+
+What the host needs depends on how the executable was installed. Everything
+else runs inside the container image.
+
+| Install method | Host needs |
+| --- | --- |
+| Downloaded binary | Podman and the OpenSSH client, set up as below |
+| npm package | Podman, OpenSSH, and Node.js 18 or newer, which runs the package's launcher; npm to install it |
+| NuGet package (Windows) | Podman, OpenSSH, `nuget.exe` to extract the package, and PowerShell 7 to run its setup script once |
+| Source build | Podman, OpenSSH, and Go 1.23 or later at build time |
+
+On Linux, the executable needs rootless Podman 5 or newer for your user, set up
+the same way as for the checkout launchers:
+
+- subordinate UID and GID ranges for your user in `/etc/subuid` and
+  `/etc/subgid`, and the `newuidmap` and `newgidmap` helpers;
+- `pasta`, because every sandbox is created with `--network=pasta`;
+- delegated cgroups v2 CPU, memory, and process controllers, because every
+  sandbox is created with `--cpus`, `--memory`, and a process limit.
+
+The setup notes are in the README's [Requirements](../README.md#requirements)
+and the [Linux quick guide](QUICKGUIDE-LINUX.md). Run `podman info` as your
+normal user first. The executable itself checks only that `podman` is on `PATH`
+and reports rootless mode. It does not check the Podman version, the ID ranges,
+`pasta`, or cgroup delegation, so a missing piece shows up as a Podman error
+when a sandbox is created.
+
+On Windows 11 x64, Podman 6.0 or later must have a running rootless WSL2
+machine; see [Windows runtime](#windows-runtime).
+
+The OpenSSH client (`ssh`, `ssh-keygen`) is used for opt-in SSH setup, checking
+configured SSH access, `service`, `forward`, and browser Azure setup. Browser
+Azure setup also opens the host's default browser with `xdg-open` on Linux or
+`rundll32.exe` on Windows.
+
+The host does not need Bash, Python, PowerShell, Git, or a checkout of this
+repository to run a downloaded binary, and needs Node.js only for the npm
+package. The .NET SDKs, Node.js, Python, Azure CLI, Playwright dependencies,
+and the agents themselves are installed inside the image and each sandbox's
+home volume, not on the host. They are listed in [TOOLCHAIN.md](TOOLCHAIN.md).
+
+## Install
+
+[RELEASES.md](RELEASES.md) is the procedure for installing a release binary,
+the npm package, or the NuGet package, and for verifying checksums and build
+provenance. No release exists yet, so for now build from source with Go 1.23 or
+later:
 
 ```sh
 go build -o sandboxed-agents ./cmd/sandboxed-agents
@@ -18,12 +68,68 @@ go build -o sandboxed-agents ./cmd/sandboxed-agents
 ```
 
 On Windows, build `sandboxed-agents.exe`. The binary bundles the container
-build context and can run from an unrelated directory without the checkout,
-Go, Python, Bash, or PowerShell. Podman must already be installed and configured
-rootless. The OpenSSH client (`ssh`, `ssh-keygen`) is required for opt-in SSH
-setup, checking configured SSH access, `service`, `forward`, and browser Azure
-setup. Browser Azure setup also opens the host's default browser: `xdg-open` on
-Linux, or `rundll32.exe` on Windows. Development tools installed inside images are listed in [TOOLCHAIN.md](TOOLCHAIN.md).
+build context and can run from an unrelated directory. Put it in a directory on
+`PATH`, outside any directory you plan to bind as a workspace; workspace
+protection refuses such a bind.
+
+### Shorter command name
+
+The command is `sandboxed-agents`. For shorter typing, define an alias in your
+shell profile. This page uses `sba` as the example:
+
+```bash
+# ~/.bashrc or ~/.zshrc
+alias sba=sandboxed-agents
+```
+
+```powershell
+# PowerShell profile ($PROFILE)
+Set-Alias -Name sba -Value sandboxed-agents
+```
+
+Do not use `sandbox` as the alias or as the installed file name on Linux.
+Fedora and related distributions can install `/usr/bin/sandbox` from
+`policycoreutils-sandbox`, an unrelated SELinux tool. Depending on `PATH` order
+and whether a shell reads the alias, `sandbox` would run one program or the
+other. The checkout launcher `./sandbox` is unaffected because it is called by
+path.
+
+## Upgrade and reinstall
+
+The executable does not update itself. Install the newer release the same way
+as the old one; the steps are in [RELEASES.md](RELEASES.md). Ownership is the
+controller group name, not the install location, so upgrading, moving the
+binary, or switching between the binary, npm, and NuGet keeps existing sandboxes
+as long as `SANDBOX_CONTROLLER` stays the same. SSH files live in the state
+directory and are also kept. Remove the old installation when switching
+methods, so only one `sandboxed-agents` is on `PATH`.
+
+A new executable version does not change existing sandboxes. `list` marks those
+built by an older version as `(outdated)`. Recreate them with the new bundled
+image when convenient, after saving work, because recreation ends running
+sessions:
+
+```sh
+sandboxed-agents agent01 update
+sandboxed-agents update --all
+```
+
+The executable and the checkout launchers both default to the image tag
+`localhost/agent-sandbox:dev`, so `build` or `update` from either replaces the
+image the other uses next. Set `SANDBOX_IMAGE` to a separate tag if you run both
+during the handover.
+
+Callers moving from the checkout launchers should also know:
+
+- Sandboxes created by the checkout launchers are not managed until adopted;
+  see [Adopt checkout-owned sandboxes](#adopt-checkout-owned-sandboxes).
+- `SANDBOX_PYTHON` only tells `sandbox.ps1` where to find Python. The
+  executable needs no Python and ignores the variable.
+- `remove --ssh-config` is accepted as a legacy no-op, as in the Linux script;
+  `remove` always deletes the sandbox's managed SSH files after a successful
+  removal. See [Opt in to SSH](#opt-in-to-ssh).
+
+## Commands
 
 `version` reports the version, Git commit, and SHA256 of bundled asset paths and
 contents. Development builds use `0.1.0-dev` and `unknown` unless supplied at
@@ -40,15 +146,19 @@ Installing or running this preview never adopts them; see
 
 The command grammar is `sandboxed-agents NAME COMMAND [PARAMETERS]`.
 Commands such as `build`, `list`, and `version` take no sandbox name; command
-names are reserved. Unsupported commands fail with a preview limitation message.
+names are reserved. `sandboxed-agents --help` lists every command form, and all
+of them are implemented; the executable as a whole is still a preview. An
+unknown command after a sandbox name fails before Podman is contacted with
+`Unknown command: COMMAND. Run sandboxed-agents --help`.
 
 Run `go test ./...` for the executable's offline public CLI tests. The
 [shared host contract](HOST-CONTRACT.md) also runs its host command, list, SSH
 opt-in, and workspace storage suites against it; that page has the Linux and
-PowerShell recipes. CI runs the Go tests and all
-four contract suites against the binary on Linux and Windows and cross-builds
-linux/amd64, linux/arm64, and windows/amd64. These tests use fake Podman, SSH,
-and browser processes only. They do not exercise real Podman, real SSH, or real
+PowerShell recipes. CI runs the Go tests, all four contract suites, and the
+package tests against the binary on Linux and Windows, and cross-builds
+linux/amd64, linux/arm64, and windows/amd64;
+[HANDOVER.md](HANDOVER.md#evidence-so-far) records which commits have a passing
+run. These tests use fake Podman, SSH, and browser processes only. They do not exercise real Podman, real SSH, or real
 Azure sign-in; live validation and stable-release gates remain open under #50.
 
 ## Create and manage a sandbox
@@ -101,14 +211,15 @@ Through npm, it also rejects binds containing, or contained by, the npm command
 used for launch, its `.cmd` or `.ps1` shims, or its launch link; see
 [npm](RELEASES.md#npm).
 State belongs under `$XDG_STATE_HOME/sandboxed-agents`, defaulting to
-`~/.local/state/sandboxed-agents`, or `%LOCALAPPDATA%\\sandboxed-agents` on Windows.
-Creation does not need to write state there yet. Windows path alias handling
-is described under [Windows runtime](#windows-runtime); offline tests do not
+`~/.local/state/sandboxed-agents`, or `%LOCALAPPDATA%\sandboxed-agents` on Windows.
+`up --ssh-config` writes the sandbox's SSH files there, and
+`--capabilities podman` writes the seccomp profile there. Windows path alias
+handling is described under [Windows runtime](#windows-runtime); offline tests do not
 establish live Windows bind support.
 
 ## Nested Podman
 
-On Linux, add `--capabilities podman` to `up` to install the nested Podman image
+On Linux and Windows, add `--capabilities podman` to `up` to install the nested Podman image
 layer and permit inner rootless containers. The default is `none`. The derived
 image uses an immutable base image ID and the bundled capability recipe.
 
@@ -433,8 +544,20 @@ either the controller group or the `adopted-from` path of the container that
 mounts it. `up` without an existing container has no such label to consult, so
 after a plain `remove` it refuses the checkout-labelled volumes.
 
-After adoption the checkout scripts' ownership check rejects the sandbox. Manage
-it with the executable only.
+Removing an adopted sandbox therefore depends on whether its volumes should go:
+
+- `sandboxed-agents agent01 remove --volumes` deletes the container and its
+  checkout-labelled volumes, because the container still carries the
+  `adopted-from` label when the volumes are checked.
+- Plain `remove` keeps the volumes, but afterwards neither `up` nor
+  `remove --volumes` accepts them. To reuse them, recreate the sandbox from the
+  same checkout path and adopt it again. Otherwise delete them with
+  `podman volume rm` after checking their names.
+
+After adoption the checkout scripts' ownership check rejects the sandbox. There
+is no command that returns an adopted sandbox to its checkout, so manage it with
+the executable only. An adoption that rolled back leaves the original
+checkout-owned container, which the checkout keeps managing.
 
 ### SSH migration
 

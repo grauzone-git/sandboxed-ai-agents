@@ -74,6 +74,17 @@ SSH, lifecycle commands, transactional updates, and offline tests.
 ssh agent01
 ```
 
+### Standalone executable preview
+
+A standalone `sandboxed-agents` executable for Linux and Windows is in preview.
+A downloaded binary needs only Podman and OpenSSH on the host, and no checkout.
+It has not been released or run against real Podman yet, so the checkout
+commands on this page remain the supported way to run sandboxes. See the
+[executable preview](docs/EXECUTABLE.md) for its prerequisites, install
+options, the `sba` alias and the `/usr/bin/sandbox` conflict, upgrades, and
+adoption of existing sandboxes, and the [handover](docs/HANDOVER.md) for the
+gates that remain.
+
 ## Getting started
 
 Build the image once, then create a sandbox:
@@ -250,7 +261,9 @@ Start with the [Linux quick guide](docs/QUICKGUIDE-LINUX.md) or the
 | Configure the image, .NET, npm, Playwright, Git, Azure | [Development toolchain](docs/TOOLCHAIN.md) |
 | Configure sandbox Azure login on Linux or native Windows | [Azure setup](docs/AZURE-SETUP.md) |
 | Understand isolation, desktop UIs, and remote workers | [Architecture](docs/ARCHITECTURE.md) |
+| Try the standalone executable preview or adopt existing sandboxes | [Executable preview](docs/EXECUTABLE.md) |
 | Install executable release packages or prepare a release | [Executable releases and packages](docs/RELEASES.md) |
+| See or record the executable's validation and release gates | [Executable handover](docs/HANDOVER.md) |
 | Know why it is built this way before changing it | [Project context](CONTEXT.md) |
 | Work on this repository as an AI coding agent | [AGENT.md](AGENT.md) |
 

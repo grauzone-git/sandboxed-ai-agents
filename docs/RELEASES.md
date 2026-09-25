@@ -9,23 +9,36 @@ release gates are tracked in
 
 ## Validation status
 
-What has run: the local offline suite (`./tests/run`, which is what
-`make test` runs), including the offline package tests, and repeated
-`packaging/build.py` builds that produced identical binaries.
+What has run locally: the offline suite (`./tests/run`, which is what
+`make test` runs), including the offline package tests on Linux, and repeated
+`packaging/build.py` builds that produced identical binaries. Regular CI passed
+on the #49 commit `eed5f28`, including the native package tests on Linux and
+Windows; later documentation commits have not run yet. Native CI results are
+recorded per commit in [HANDOVER.md](HANDOVER.md#evidence-so-far).
 
-What has not run yet:
+Before the first preview tag, these automated checks must pass on the release
+candidate commit:
 
-- the release workflow, including its attestation creation and
-  `gh attestation verify` steps
-- the native package tests in regular CI on Linux and Windows; the workflow is
-  configured for them but no results are recorded here
-- installing from a real GitHub release or a public registry
-- running the Linux ARM64 binary, natively or through the npm package, on an
-  ARM64 host
+- regular CI on Linux and Windows, including the native package tests against
+  the natively built binary
+- the release workflow itself, which runs the tests again, rebuilds each target
+  twice, and creates and verifies attestations before it publishes anything
+
+The following checks need a published preview, so they cannot run before it.
+They gate the first stable release instead:
+
+- installing from a real GitHub release, and from a public registry if the
+  packages are published there
+- `gh attestation verify` by a user against the downloaded binaries, and a
+  rebuild of the tag that reproduces the published `SHA256SUMS`
 - a real Windows NuGet install that updates the user `PATH`, checked from a
   newly opened terminal
+- running the Linux ARM64 binary, natively or through the npm package, on an
+  ARM64 host
 
-Each of these remains a gate before the first preview release.
+None of them has run. The owner-run procedures are in [HANDOVER.md](HANDOVER.md),
+and results are recorded in
+[#50](https://github.com/grauzone-git/sandboxed-ai-agents/issues/50).
 
 ## Release contents
 
@@ -49,15 +62,18 @@ compare it with the release's `SHA256SUMS` and attestation.
 
 Installing or removing a package does not call Podman, create sandboxes, or
 change SSH configuration, and leaves sandbox data alone. The executable has no
-self-update command.
+self-update command; [Upgrade and reinstall](EXECUTABLE.md#upgrade-and-reinstall)
+covers what happens to existing sandboxes.
 
 ## Install a downloaded binary
 
-This method needs only the host prerequisites in
-[EXECUTABLE.md](EXECUTABLE.md): Podman and OpenSSH. It does not
-need Node.js, NuGet, or PowerShell.
+This method needs only the
+[host prerequisites](EXECUTABLE.md#host-prerequisites): Podman, set up as
+described there, and OpenSSH. It does not need Node.js, NuGet, or PowerShell.
 
-Download the matching binary and `SHA256SUMS` from the same release. On Linux:
+Download the matching binary and `SHA256SUMS` from the same release. On Linux,
+the commands below install into `~/.local/bin`, which must already be on your
+`PATH` for the last line to work; any other directory on `PATH` works too:
 
 ```bash
 sha256sum --check --ignore-missing SHA256SUMS
@@ -70,7 +86,10 @@ On Windows, compare the output of
 matching line in `SHA256SUMS`, case-insensitively, then copy the file as
 `sandboxed-agents.exe` into a directory on `PATH`.
 
-Keep the executable outside any directory you plan to bind as a workspace.
+Keep the executable outside any directory you plan to bind as a workspace, and
+do not install it under the name `sandbox`; see
+[Shorter command name](EXECUTABLE.md#shorter-command-name) for an alias and the
+`/usr/bin/sandbox` conflict.
 
 To verify provenance with the GitHub CLI:
 
@@ -135,8 +154,26 @@ described in
 [Microsoft's migration documentation](https://learn.microsoft.com/en-us/nuget/consume-packages/migrate-packages-config-to-package-reference),
 so the package ships an explicit PowerShell setup script instead.
 
-Extracting the package needs `nuget.exe`. Running its setup script needs
-PowerShell. After setup, the command itself needs only Podman and OpenSSH.
+Extracting the package needs `nuget.exe`. Run its setup scripts in PowerShell 7
+(`pwsh`), the version the rest of this repository targets on Windows. After
+setup, the command itself needs only Podman and OpenSSH.
+
+Do not change the machine or user execution policy for these scripts. If
+PowerShell refuses to run `install-command.ps1` or `remove-command.ps1` because
+of the execution policy, first check the package's binary against the release as
+described in [Release contents](#release-contents), then relax the policy for
+the current window only:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
+```
+
+The setting ends when the window closes. Run the setup script in that same
+window, not through a new `pwsh -File` process, so its change to the session's
+`PATH` stays visible. A policy set by Group Policy cannot be overridden this
+way; ask whoever manages the machine. Whether scripts extracted from a
+downloaded package are blocked by the default policy has not been checked on a
+real host.
 
 Place the downloaded `.nupkg` in a local directory used as a package source:
 
@@ -180,10 +217,12 @@ remove the installed command.
 
 ## Prepare a release
 
+Do not tag a preview until the automated checks in
+[Validation status](#validation-status) pass on the release candidate commit.
 Do not tag a stable release until the gates in
-[#50](https://github.com/grauzone-git/sandboxed-ai-agents/issues/50) that
-precede it hold, including the owner-run Linux and Windows validation. The
-checkout launchers stay in place until every handover condition in
+[HANDOVER.md](HANDOVER.md#gates) that precede it hold, including the owner-run
+Linux and Windows validation of a published preview. The checkout launchers stay
+in place until every handover condition in
 [#36](https://github.com/grauzone-git/sandboxed-ai-agents/issues/36) is met, and
 are removed no earlier than the release after the first stable release.
 
@@ -191,8 +230,28 @@ Commit release notes at `docs/releases/vX.Y.Z.md` before tagging; the directory
 does not exist yet. The workflow fails without that file. For every `v0.*` tag
 and every tag with a prerelease suffix, the notes need a nonempty
 `## Omitted commands` section naming unsupported commands, or stating explicitly
-that none are omitted. Also record the actual manual validation results and
-platform limitations.
+that none are omitted. Also record known platform limitations.
+
+The notes file is fixed when the tag is pushed and becomes the release body, but
+manual validation runs against the published release, so a release's notes
+cannot contain its own validation results. Record each release's results in
+[#50](https://github.com/grauzone-git/sandboxed-ai-agents/issues/50) as they
+are produced, and copy them into the next release's notes under a section
+naming the release they validate. Do not describe validation as done in notes
+written before it ran.
+
+The stable release is tagged on the same commit as the last fully validated
+preview, with passing regular CI on that commit, so both report the same
+`commit` and `assets` values in `sandboxed-agents version`. Its notes must
+therefore already be in that commit: add them together with the final
+preview's notes, citing earlier previews' results from #50 only as history
+for those releases, then validate the final preview and record the results in
+#50 and in the notes of the release after the stable one. If that validation
+fails, never edit or retag the failed preview; fix it in a new commit with a
+new preview version and notes file and updated stable notes, and validate
+again.
+[HANDOVER.md](HANDOVER.md#release-and-removal-sequence) gives the full
+sequence.
 
 The workflow publishes every `v0.*` tag and every tag with a suffix as a GitHub
 prerelease. Under the current workflow, a stable release therefore needs a tag
