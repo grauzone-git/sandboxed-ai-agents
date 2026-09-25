@@ -87,7 +87,8 @@ if (args[0] === 'info') console.log('true');
 else if (args[0] === 'inspect') console.log(process.env.TEST_FOREIGN_OWNER || process.env.TEST_OWNER);
 else if (args[0] === 'exec' && process.env.TEST_MANAGEMENT) { console.log('manager output'); console.error('manager diagnostic'); process.exit(Number(process.env.TEST_EXEC_EXIT || 0)); }
 else if (args[0] === 'exec' && (args.includes('login') || args.includes('setup'))) process.exit(Number(process.env.TEST_LOGIN_EXIT || 0));
-else if (args[0] === 'exec' && args.includes('service') && args.at(-1) === 'start') process.exit(0);
+else if (args[0] === 'exec' && args.includes('service') && args.at(-1) === 'start') process.exit(process.env.TEST_START_FAILED ? 1 : 0);
+else if (args[0] === 'exec' && args.includes('session')) process.exit(0);
 else if (args[0] === 'restart') process.exit(0);
 else if (process.env.TEST_REMOVE && ['stop', 'rm'].includes(args[0])) process.exit(args[0] === process.env.TEST_REMOVE_FAIL ? 1 : 0);
 else if (process.env.TEST_REMOVE && args[0] === 'volume' && args[1] === 'inspect') console.log(process.env.TEST_FOREIGN_VOLUME && args.at(-1).endsWith('-sshd') ? '/foreign' : process.env.TEST_OWNER);
@@ -95,7 +96,7 @@ else if (process.env.TEST_REMOVE && args[0] === 'volume' && args[1] === 'exists'
 else if (process.env.TEST_REMOVE && args[0] === 'volume' && ['exists', 'rm'].includes(args[1])) process.exit(args[1] === 'rm' && process.env.TEST_VOLUME_REMOVE_FAIL ? 1 : 0);
 else process.exit(1); // No image/container: stop before creation in positive parsing tests.
 `);
-  writeFake('ssh', recorder + '\nif (process.env.TEST_START_FAILED && args.at(-1) === "-s") process.exit(1);\n');
+  writeFake('ssh', recorder + '\nif (process.env.TEST_START_FAILED && (args.at(-1) === "-s" || /service .*start/.test(args.at(-1)))) process.exit(1);\n');
   const env = {
     ...process.env, HOME: hostHome, USERPROFILE: hostHome,
     XDG_STATE_HOME: path.join(fixture, 'state'), LOCALAPPDATA: path.join(fixture, 'local'),
@@ -111,10 +112,9 @@ else process.exit(1); // No image/container: stop before creation in positive pa
     cwd: checkout, encoding: 'utf8', env: { ...env, ...extraEnv },
   });
   if (launcher.executable) {
-    if (process.env.SANDBOX_TEST_CONTRACT_SLICE === 'management') {
-      return require('./host-binary-management.cjs')({hostHome, transportLog, env, cli});
-    }
-    throw new Error('This executable preview supports SANDBOX_TEST_CONTRACT_SLICE=management.');
+    const context = {fixture, checkout, hostHome, transportLog, env, launcher, cli, invalidArguments, grammarCases};
+    if (process.env.SANDBOX_TEST_CONTRACT_SLICE === 'management') return require('./host-binary-management.cjs')(context);
+    return require('./host-binary-contract.cjs')(context);
   }
   for (const args of invalidArguments) {
     assert.notEqual(cli(args).status, 0, JSON.stringify(args));

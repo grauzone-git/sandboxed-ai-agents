@@ -5,7 +5,7 @@ import shutil
 import sys
 
 
-WINDOWS_PODMAN_PREFLIGHT = r'''import json, os, sys
+WINDOWS_PODMAN_PREFLIGHT = r'''import json, os, shlex, sys
 request = sys.argv[1:]
 connection = os.environ.get('CONTAINER_CONNECTION') or 'podman-machine-default'
 reply = None
@@ -17,6 +17,22 @@ elif request[:2] == ['machine', 'list']:
 elif request[:2] == ['machine', 'inspect']:
     reply = [{'Name': connection, 'State': 'running', 'Rootful': False,
               'SSHConfig': {'Port': 50222, 'RemoteUsername': 'user'}}]
+elif request[:2] == ['machine', 'ssh']:
+    guest = shlex.split(request[3])
+    if guest[:3] == ['podman', 'unshare', 'cat']:
+        print('0 1000 1\n1 100000 65536')
+    elif guest[:2] == ['cat', '--']:
+        source = os.environ.get('TEST_SECCOMP')
+        if source:
+            with open(source) as stream: print(stream.read())
+        else:
+            print(json.dumps({'defaultAction': 'SCMP_ACT_ERRNO', 'syscalls': []}))
+    elif guest[:2] == ['sh', '-c'] and 'mktemp' in guest[2]:
+        sys.stdin.read()
+        print('/home/user/.local/share/sandboxed-agents/seccomp/' + guest[-2] + '/' + guest[-1] + '.json')
+    elif not (guest[:2] == ['sh', '-c'] and 'test -c /dev/fuse' in guest[2]):
+        sys.exit('Unexpected guest Podman call: ' + repr(guest))
+    sys.exit(0)
 elif request[:2] == ['--connection', connection]:
     sys.argv = [sys.argv[0], *request[2:]]
     request = sys.argv[1:]

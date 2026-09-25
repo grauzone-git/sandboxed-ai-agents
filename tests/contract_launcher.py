@@ -56,6 +56,8 @@ def describe_launcher(checkout, env, details=False):
                                  text=True, capture_output=True, timeout=20)
         description['executable'] = (version.returncode == 0 and
                                      version.stdout.startswith('sandboxed-agents version '))
+        if description['executable']:
+            description['version'] = version.stdout.splitlines()[0].removeprefix('sandboxed-agents version ')
     return description
 
 

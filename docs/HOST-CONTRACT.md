@@ -51,60 +51,60 @@ issues implement the intentional changes in #36, extend the relevant scenarios
 for state-directory SSH files, executable workspace protection, and direct
 Podman sessions. Passing a subset for a preview does not establish full parity.
 
-## Executable management subset
+## Run the contract against the executable
 
-When `SANDBOX_TEST_LAUNCHER` selects the executable, `tests/test-host-commands.cjs`
-does not run the script scenarios. Set `SANDBOX_TEST_CONTRACT_SLICE=management`
-to run the shared management cases in `tests/host-binary-management.cjs`; without
-it the suite fails with a message naming the supported slice. The variable has no
-effect when the launcher is the checkout script. On Linux:
+The executable's supported targets are Linux on amd64 and arm64, and Windows 11
+on amd64. CI cross-builds those three and runs the contract on Linux and
+Windows runners. macOS, the BSDs, and Windows on ARM64 are outside the
+supported targets: the code may compile there, but nothing tests or supports
+it.
+
+The recipes need Go 1.23 or later, Python 3.9 or later, and Node.js. Run them
+from the checkout root. On Linux, build the controller and run the four suites:
 
 ```sh
 go build -o sandboxed-agents ./cmd/sandboxed-agents
 export SANDBOX_TEST_LAUNCHER="[\"$PWD/sandboxed-agents\"]"
-SANDBOX_TEST_CONTRACT_SLICE=management node tests/test-host-commands.cjs
+node tests/test-host-commands.cjs
 python3 -B tests/test-list.py
+python3 -B tests/test-ssh-opt-in.py
+python3 -B tests/test-workspace-storage.py
 unset SANDBOX_TEST_LAUNCHER
 ```
 
-The subset drives the public CLI against fake Podman and SSH commands and covers:
-
-- Session shortcuts for `copilot`, `claude`, `codex`, `hermes`, `opencode`,
-  `deepseek`, and `t3`, with `t3` routed to the tool manager.
-- `agents login` for the managed agents and `tools login github`.
-- `agents` and `tools` with no operation, `list`, `check`, `set`, `enable`,
-  `disable`, and `update`, including `set none` and `update all`.
-- `run` for an agent and `tool` for a tool.
-- Rejected input, such as unknown or misplaced names, empty or malformed lists,
-  extra arguments, and missing operations. Each fails with an error before any
-  Podman or SSH call.
-- Literal argument passing: `--`, spaces, quotes, shell syntax, empty strings,
-  newlines, and `--help` reach the manager unchanged.
-- Exit status 0 and 7, stdout, and stderr passing through from the manager.
-- The exact fake Podman call: one `podman exec` as `1000:1000` in `/workspace`,
-  with `-i` for interactive commands, and no SSH or init call.
-- A foreign-owned container rejected before `exec`.
-- Unchanged host `~/.ssh` and controller state directory after all cases.
-
-The list and management contracts support Windows through a native fake-command
-relay. The management subset also needs Node on `PATH`:
+Linux fakes are executable scripts, so no relay is needed. Windows cannot run
+script fakes as native commands. There, the suites copy a Go relay built from
+`tests/fake-command` for each fake, and `SANDBOX_TEST_FAKE_COMMAND` must point
+at it. In PowerShell 7:
 
 ```powershell
 go build -o sandboxed-agents.exe ./cmd/sandboxed-agents
 go build -o fake-command.exe ./tests/fake-command
 $env:SANDBOX_TEST_FAKE_COMMAND = (Resolve-Path ./fake-command.exe).Path
 $env:SANDBOX_TEST_LAUNCHER = ConvertTo-Json -Compress -InputObject @((Resolve-Path ./sandboxed-agents.exe).Path)
-$env:SANDBOX_TEST_CONTRACT_SLICE = 'management'
+$env:PYTHON = (Get-Command python).Source
 node tests/test-host-commands.cjs
 python -B tests/test-list.py
+python -B tests/test-ssh-opt-in.py
+python -B tests/test-workspace-storage.py
 ```
 
-CI runs `go test ./...`, the list contract, and the management subset against
-the executable on Linux and Windows. The subset is not full parity with the four
-suites. The remaining command, SSH opt-in, and workspace storage scenarios for
-the executable remain with #47, #48, and #50. Cross-compilation alone does not
-validate Windows behavior.
+Check `$LASTEXITCODE` after each suite, because PowerShell continues after a
+failing native command. `PYTHON` makes the JavaScript suite use the same Python
+as the other three.
 
-Supported executable targets are linux/amd64, linux/arm64, and Windows 11
-windows/amd64. macOS and BSD are not targets. POSIX fake commands and generic
-Unix code paths in the tests do not imply support for them.
+CI runs `go test ./...` and all four contract suites against the binary on
+Linux and Windows, with `SANDBOX_TEST_FAKE_COMMAND` pointing at the relay. For
+the binary, the host command suite runs its executable scenarios, including
+services, forwarding, and tool setup; `SANDBOX_TEST_CONTRACT_SLICE=management`
+still selects the narrower agent and tool management slice. Lifecycle and other
+source-specific branches in the suites keep the script expectations when the
+launcher is a checkout script. In the workspace storage suite, five
+script-only checkout source protection checks are skipped for the binary, and
+two binary-only checks replace them: state, `~/.ssh`, and build-context
+protection, and the global-install suggestion for a project-local executable.
+
+These suites use fake commands only. Passing them does not validate real
+Podman, SSH, WSL2, or Azure sign-in, and cross-compilation alone does not
+validate Windows behavior. Live validation and the stable-release gates remain
+open under #50.

@@ -3,11 +3,13 @@ import json
 import os
 from pathlib import Path
 import shutil
+import socket
 import subprocess
 import tempfile
 import unittest
 
 from contract_launcher import describe_launcher
+from native_fakes import write_fake
 
 PROJECT = Path(__file__).resolve().parents[1]
 
@@ -33,11 +35,11 @@ class WorkspaceStorageTests(unittest.TestCase):
         self.env = {**os.environ, "HOME": str(self.home),
                     'USERPROFILE': str(self.home), 'LOCALAPPDATA': str(self.root / 'local'),
                     'XDG_STATE_HOME': str(self.root / 'state'),
-                    "PATH": f"{self.bin}:{os.environ['PATH']}",
+                    "PATH": str(self.bin) + os.pathsep + os.environ['PATH'],
                     "TEST_LOG": str(self.log),
                     "TEST_VOLUMES": str(self.state), "TEST_SECCOMP": str(self.seccomp)}
-        (self.bin / "id").write_text("#!/bin/sh\nprintf '1000\\n'\n")
-        (self.bin / "podman").write_text('''#!/usr/bin/env python3
+        write_fake(self.bin, "id", "#!/usr/bin/env python3\nprint(1000)\n")
+        write_fake(self.bin, "podman", '''#!/usr/bin/env python3
 import json, os, sys
 from pathlib import Path
 args = sys.argv[1:]
@@ -66,14 +68,22 @@ elif args[0] == 'exec' and '/bin/chown' in args and os.environ.get('TEST_CHOWN_F
 elif args[0] in ('exec', 'run', 'image', 'stop', 'start', 'rm'): pass
 else: sys.exit('Unexpected call: ' + repr(args))
 ''')
-        for command in self.bin.iterdir():
-            command.chmod(0o755)
-        launcher = describe_launcher(self.checkout, self.env)
+        launcher = describe_launcher(self.checkout, self.env, details=True)
         self.command = launcher['command']
         self.owner = launcher['owner']
         self.env['TEST_OWNER'] = self.owner
+        self.executable = launcher['executable']
+        self.version = launcher.get('version')
+        self.port = 2222
+        if self.executable:
+            with socket.socket() as listener:
+                listener.bind(('127.0.0.1', 0))
+                self.port = listener.getsockname()[1]
 
     def cli(self, *args, success=True, env=None):
+        positional_port = len(args) > 3 and not args[2].startswith('-') and args[3].isdigit()
+        if self.executable and len(args) > 1 and args[1] == 'up' and '--ssh-port' not in args and not positional_port:
+            args = (*args, '--ssh-port', str(self.port))
         result = subprocess.run([*self.command, *args],
                                 cwd=self.checkout, env={**self.env, **(env or {})},
                                 capture_output=True, text=True, timeout=20)
@@ -84,6 +94,8 @@ else: sys.exit('Unexpected call: ' + repr(args))
         return [json.loads(line) for line in self.log.read_text().splitlines()] if self.log.exists() else []
 
     def test_powershell_entry_point_is_protected_before_provisioning(self):
+        if self.executable:
+            self.skipTest("Checkout source protection applies to the script launcher.")
         entry = self.checkout / 'sandbox.ps1'
         entry.write_text('# PowerShell host entry point')
         self.cli('demo', 'up', str(entry), '--agents', 'codex', success=False)
@@ -91,6 +103,8 @@ else: sys.exit('Unexpected call: ' + repr(args))
         self.assertFalse(any(call[0] == 'run' for call in self.calls()))
 
     def test_go_controller_sources_are_protected_before_provisioning(self):
+        if self.executable:
+            self.skipTest("Checkout source protection applies to the script launcher.")
         for relative in ('go.mod', 'assets.go', 'cmd/sandboxed-agents/main.go', 'internal/cli/cli.go',
                          'sandboxed-agents', 'sandboxed-agents.exe'):
             entry = self.checkout / relative
@@ -102,6 +116,8 @@ else: sys.exit('Unexpected call: ' + repr(args))
         self.assertFalse(any(call[0] == 'run' for call in self.calls()))
 
     def test_live_azure_validation_files_are_protected_before_provisioning(self):
+        if self.executable:
+            self.skipTest("Checkout source protection applies to the script launcher.")
         tests = self.checkout / 'tests'
         tests.mkdir()
         for name in ('live-azure-auth.py', 'azure-auth-probe.py'):
@@ -113,7 +129,7 @@ else: sys.exit('Unexpected call: ' + repr(args))
 
     def test_up_requires_a_sandbox_name(self):
         result = self.cli("up", "--agents", "codex", success=False)
-        self.assertIn("./sandbox NAME up --agents codex", result.stderr)
+        self.assertIn("sandboxed-agents NAME up" if self.executable else "./sandbox NAME up --agents codex", result.stderr)
         self.assertEqual(self.calls(), [])
 
     def test_omitted_workspace_uses_only_named_volumes(self):
@@ -122,7 +138,7 @@ else: sys.exit('Unexpected call: ' + repr(args))
         mounts = [run[i + 1] for i, arg in enumerate(run) if arg == "--volume"]
         self.assertEqual(mounts, ["agent01-workspace:/workspace", "agent01-home:/home/agent",
                                   "agent01-sshd:/var/lib/agent-sshd"])
-        self.assertIn("127.0.0.1:2222:2222", run)
+        self.assertIn(f"127.0.0.1:{self.port}:2222", run)
         self.assertEqual(set(json.loads(self.state.read_text())),
                          {"agent01-workspace", "agent01-home", "agent01-sshd"})
         self.assertEqual(set(json.loads(self.state.read_text()).values()), {self.owner})
@@ -140,7 +156,9 @@ else: sys.exit('Unexpected call: ' + repr(args))
                 self.log.unlink(missing_ok=True)
                 self.cli("demo", "up", str(directory), *port_args, "--agents", "codex")
                 run = next(call for call in self.calls() if call[0] == "run")
-                self.assertIn(f"{directory}:/workspace:Z", run)
+                sources = [arg.removesuffix(':/workspace:Z') for arg in run if arg.endswith(':/workspace:Z')]
+                self.assertEqual(len(sources), 1)
+                self.assertTrue(Path(sources[0]).samefile(directory))
                 self.assertIn("127.0.0.1:2231:2222", run)
                 self.assertTrue(directory.is_dir())
                 self.assertNotIn("demo-workspace", json.loads(self.state.read_text()))
@@ -162,7 +180,20 @@ else: sys.exit('Unexpected call: ' + repr(args))
                 self.assertEqual('--security-opt=apparmor=unconfined' in run, enabled)
                 self.assertEqual('--security-opt=label=disable' in run, enabled)
                 self.assertEqual('--security-opt=unmask=ALL' in run, enabled)
-                self.assertEqual(f'--security-opt=seccomp={self.checkout}/.local/nested-podman-seccomp.json' in run, enabled)
+                profiles = [arg.removeprefix('--security-opt=seccomp=') for arg in run
+                            if arg.startswith('--security-opt=seccomp=')]
+                self.assertEqual(len(profiles), int(enabled))
+                if enabled:
+                    if self.executable:
+                        state = Path(self.env['LOCALAPPDATA'] if os.name == 'nt' else self.env['XDG_STATE_HOME'])
+                        local_profile = state / 'sandboxed-agents/seccomp' / self.version / 'nested-podman.json'
+                        self.assertTrue(local_profile.is_file())
+                        if os.name == 'nt':
+                            self.assertTrue(profiles[0].startswith('/home/user/.local/share/sandboxed-agents/seccomp/'))
+                        else:
+                            self.assertTrue(Path(profiles[0]).samefile(local_profile))
+                    else:
+                        self.assertEqual(profiles[0], str(self.checkout / '.local/nested-podman-seccomp.json'))
                 self.assertNotIn('--security-opt=seccomp=unconfined', run)
                 self.assertFalse(any(arg.startswith('--cap-add') for arg in run))
                 tmpfs = [run[i + 1] for i, arg in enumerate(run) if arg == '--tmpfs']
@@ -228,6 +259,8 @@ else: sys.exit('Unexpected call: ' + repr(args))
         self.assertFalse(any("init" in call for call in self.calls()))
 
     def test_grammar_host_script_cannot_be_exposed_as_workspace(self):
+        if self.executable:
+            self.skipTest("Checkout source protection applies to the script launcher.")
         script = self.checkout / "src/host/grammar.py"
         link = self.root / "grammar-link"
         link.symlink_to(script)
@@ -240,6 +273,8 @@ else: sys.exit('Unexpected call: ' + repr(args))
                                      for call in self.calls()))
 
     def test_azure_host_transport_cannot_be_exposed_as_workspace(self):
+        if self.executable:
+            self.skipTest("Checkout source protection applies to the script launcher.")
         script = self.checkout / 'src/host/azure_auth.py'
         link = self.root / 'azure-link'
         link.symlink_to(script)
@@ -250,6 +285,46 @@ else: sys.exit('Unexpected call: ' + repr(args))
                 self.assertIn('host SSH/controller files', result.stderr)
                 self.assertFalse(any(call[0] == 'run' or call[:2] == ['volume', 'create']
                                      for call in self.calls()))
+
+
+    def test_executable_protects_state_ssh_and_future_build_contexts(self):
+        if not self.executable:
+            self.skipTest("Executable state protection is covered by the executable launcher.")
+        state_root = Path(self.env['LOCALAPPDATA'] if os.name == 'nt' else self.env['XDG_STATE_HOME'])
+        protected = state_root / 'sandboxed-agents'
+        for workspace in (state_root, protected / 'new-workspace', self.home, self.home / '.ssh/new'):
+            with self.subTest(workspace=workspace):
+                result = self.cli('demo', 'up', str(workspace), '--agents', 'codex', success=False)
+                self.assertIn('workspace', result.stderr.lower())
+                self.assertEqual(self.calls(), [])
+        temporary = self.root / 'future-builds'
+        temporary.mkdir()
+        self.cli('demo', 'up', str(temporary), '--agents', 'codex', success=False,
+                 env={'TMPDIR': str(temporary), 'TEMP': str(temporary), 'TMP': str(temporary)})
+        self.assertEqual(self.calls(), [])
+        protected.mkdir(parents=True)
+        alias = self.root / 'state-alias'
+        if os.name == 'nt':
+            subprocess.run(['cmd', '/c', 'mklink', '/J', str(alias), str(protected)],
+                           check=True, capture_output=True)
+        else:
+            alias.symlink_to(protected, target_is_directory=True)
+        self.cli('demo', 'up', str(alias / 'new-workspace'), '--agents', 'codex', success=False)
+        self.assertEqual(self.calls(), [])
+        self.assertFalse((protected / 'new-workspace').exists())
+
+    def test_project_local_executable_suggests_global_install(self):
+        if not self.executable or len(self.command) != 1:
+            self.skipTest("Relocating the executable requires a direct binary launcher.")
+        workspace = self.root / 'project-local'
+        workspace.mkdir()
+        installed = workspace / Path(self.command[0]).name
+        shutil.copy2(self.command[0], installed)
+        self.command = [str(installed)]
+        result = self.cli('demo', 'up', str(workspace), '--agents', 'codex', success=False)
+        self.assertIn('global install', result.stderr.lower())
+        self.assertEqual(self.calls(), [])
+        self.assertEqual(json.loads(self.state.read_text()), {})
 
 
 if __name__ == "__main__":

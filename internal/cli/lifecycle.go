@@ -44,7 +44,19 @@ func lifecycle(command, name string, args []string) error {
 			return err
 		}
 	}
-	if len(args) > 0 && !setupSSHRequested && !(command == "remove" && len(args) == 1 && args[0] == "--volumes") {
+	removeVolumes := false
+	if command == "remove" {
+		seen := map[string]bool{}
+		for _, flag := range args {
+			if seen[flag] || (flag != "--volumes" && flag != "--ssh-config") {
+				return fmt.Errorf("unexpected remove arguments")
+			}
+			seen[flag] = true
+			if flag == "--volumes" {
+				removeVolumes = true
+			}
+		}
+	} else if len(args) > 0 && !setupSSHRequested {
 		return fmt.Errorf("unexpected %s arguments", command)
 	}
 	if err := requirePodman(); err != nil {
@@ -66,7 +78,7 @@ func lifecycle(command, name string, args []string) error {
 		}
 		return nil
 	case "remove":
-		return removeSandbox(name, len(args) > 0)
+		return removeSandbox(name, removeVolumes)
 	case "check", "check-full":
 		return checkSandbox(name, command == "check-full")
 	case "shell":
@@ -181,6 +193,7 @@ func parseCreate(args []string) (createOptions, error) {
 }
 
 type catalogEntry struct {
+	Port  int      `json:"port"`
 	Agent string   `json:"agent"`
 	Login []string `json:"login"`
 }

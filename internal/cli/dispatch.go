@@ -73,6 +73,9 @@ func managementArguments(command string, parameters []string) ([]string, bool, e
 }
 
 func dispatch(command, name string, parameters []string) error {
+	if command == "tools" && len(parameters) > 0 && parameters[0] == "setup" {
+		return toolsSetup(name, parameters[1:])
+	}
 	kind := command
 	interactive := true
 	var arguments []string

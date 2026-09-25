@@ -3,10 +3,12 @@
 The Go controller is being implemented under
 [#36](https://github.com/grauzone-git/sandboxed-ai-agents/issues/36). This preview
 implements `version`, `build`, `list`, sandbox lifecycle with optional workspace
-binds, agent and tool management and sessions from #46, and sandbox image
-updates from #45. At this snapshot, adoption, tools setup, services, and
-forwarding remain upcoming executable commands under #47 and #48. Use the
-existing scripts for them until those issues land.
+binds, sandbox image updates from #45, agent and tool management and sessions
+from #46, and services, forwarding, and tool setup (T3, Azure DevOps, and Azure,
+including host browser sign-in) from #47. Adoption of checkout-owned sandboxes
+remains an upcoming executable command under #48; `adopt` is a reserved name
+that currently fails with a preview limitation message. No release has been
+published. Use the existing scripts for adoption until #48 lands.
 
 Build with Go 1.23 or later:
 
@@ -20,8 +22,10 @@ go build -o sandboxed-agents ./cmd/sandboxed-agents
 On Windows, build `sandboxed-agents.exe`. The binary bundles the container
 build context and can run from an unrelated directory without the checkout,
 Go, Python, Bash, or PowerShell. Podman must already be installed and configured
-rootless. OpenSSH is required for opt-in SSH setup and checking configured SSH access.
-Development tools installed inside images are listed in [TOOLCHAIN.md](TOOLCHAIN.md).
+rootless. The OpenSSH client (`ssh`, `ssh-keygen`) is required for opt-in SSH
+setup, checking configured SSH access, `service`, `forward`, and browser Azure
+setup. Browser Azure setup also opens the host's default browser: `xdg-open` on
+Linux, or `rundll32.exe` on Windows. Development tools installed inside images are listed in [TOOLCHAIN.md](TOOLCHAIN.md).
 
 `version` reports the version, Git commit, and SHA256 of bundled asset paths and
 contents. Development builds use `0.1.0-dev` and `unknown` unless supplied at
@@ -39,26 +43,13 @@ Commands such as `build`, `list`, and `version` take no sandbox name; command
 names are reserved. Unsupported commands fail with a preview limitation message.
 
 Run `go test ./...` for the executable's offline public CLI tests. The
-[shared host contract](HOST-CONTRACT.md) also runs its list scenarios and a
-management subset against it:
-
-```sh
-export SANDBOX_TEST_LAUNCHER="[\"$PWD/sandboxed-agents\"]"
-SANDBOX_TEST_CONTRACT_SLICE=management node tests/test-host-commands.cjs
-python3 -B tests/test-list.py
-```
-
-The management subset covers sessions, login, agent and tool management, `run`
-and `tool`, rejected input, literal arguments, exit status and output, the exact
-fake Podman calls, and unchanged host SSH and controller state. See the host
-contract for details and the Windows form. It does not establish full parity
-with the script contract; the remaining suites follow in #47, #48, and #50.
-
-CI runs Go tests, the list contract, and the management subset on Linux and
-Windows and cross-builds linux/amd64, linux/arm64, and windows/amd64. No live
-Podman execution is implied by these offline tests. Supported targets are
-linux/amd64, linux/arm64, and Windows 11 windows/amd64. macOS and BSD are not
-targets, and generic Unix code or tests do not imply support for them.
+[shared host contract](HOST-CONTRACT.md) also runs its host command, list, SSH
+opt-in, and workspace storage suites against it; that page has the Linux and
+PowerShell recipes. CI runs the Go tests and all
+four contract suites against the binary on Linux and Windows and cross-builds
+linux/amd64, linux/arm64, and windows/amd64. These tests use fake Podman, SSH,
+and browser processes only. They do not exercise real Podman, real SSH, or real
+Azure sign-in; live validation and stable-release gates remain open under #50.
 
 ## Create and manage a sandbox
 
@@ -108,9 +99,9 @@ It resolves symlinks, including existing parents of new paths. A project-local
 executable or launcher symlink produces an error suggesting a global install.
 State belongs under `$XDG_STATE_HOME/sandboxed-agents`, defaulting to
 `~/.local/state/sandboxed-agents`, or `%LOCALAPPDATA%\\sandboxed-agents` on Windows.
-Creation does not need to write state there yet. Windows machine/path alias
-validation remains part of #43; offline tests do not establish live Windows
-bind support.
+Creation does not need to write state there yet. Windows path alias handling
+is described under [Windows runtime](#windows-runtime); offline tests do not
+establish live Windows bind support.
 
 ## Nested Podman
 
@@ -129,7 +120,8 @@ The generated seccomp policy retains the engine's deny-by-default host rules
 except for the required hostname and namespace calls. It is saved under
 `<state>/seccomp/<version>/nested-podman.json`, with a private directory and file,
 and replaced when its content differs. Nothing is written beside the executable.
-Windows guest profile staging remains part of #43.
+On Windows the policy is also staged in the Podman machine, as described under
+[Windows runtime](#windows-runtime).
 
 ## Windows runtime
 
@@ -189,7 +181,9 @@ from reusing stale keys; it never authorizes container operations or adoption.
 `check` runs the container smoke test through Podman and checks SSH only if a
 private key exists. `remove` deletes this sandbox's managed SSH files after
 successful container removal. It removes the shared Include only when no managed
-configuration remains. Other sandbox keys, unrelated SSH settings, and unknown
+configuration remains. This cleanup always runs. `remove` accepts the legacy
+`--ssh-config` flag, alone or with `--volumes`, for compatibility with existing
+scripts, but ignores it. Other sandbox keys, unrelated SSH settings, and unknown
 files are retained. Unsafe symlinks or reparse points in managed paths block SSH
 setup and removal before a container is stopped.
 
@@ -240,6 +234,107 @@ while the other shortcuts use the agent manager. All commands enforce sandbox
 ownership and use `podman exec` as the unprivileged agent in `/workspace`.
 Interactive commands preserve stdin and allocate a TTY when both stdin and
 stdout are terminals. Arguments and exit status pass through to the manager.
+
+## Services and forwarding
+
+```sh
+sandboxed-agents agent01 ssh-config --install
+sandboxed-agents agent01 service t3 status
+sandboxed-agents agent01 service tokentracker start
+sandboxed-agents agent01 forward t3
+sandboxed-agents agent01 forward t3 13773
+```
+
+`service ID [status|start|stop|restart|logs]` runs the in-container service
+manager over SSH; the operation defaults to `status` and the remote exit status
+is returned. `forward ID [LOCAL_PORT]` starts the service, then keeps an SSH
+tunnel open in the foreground from `127.0.0.1:LOCAL_PORT` to the service's
+loopback port in the sandbox. Stop the command to close the tunnel.
+
+| ID | Alias | Default local port |
+| --- | --- | --- |
+| `t3` | | 3773 |
+| `hermes-dashboard` | `hermes` | 9119 |
+| `deepseek-ui` | `deepseek` | 3080 |
+| `tokentracker` | | 7680 |
+
+TokenTracker starts through the same service manager as the other tools; enable
+it first with `tools enable tokentracker`.
+
+Both commands require managed SSH setup from `up --ssh-config`,
+`start --ssh-config`, `restart --ssh-config`, or `ssh-config --install`. When it
+is missing, they fail with the `ssh-config --install` command to run, before
+contacting Podman. They use the pinned host entry with batch mode, strict host
+key checking, and agent and X11 forwarding disabled, and check sandbox ownership
+through Podman first. `forward` rejects a local port outside 1024 to 65535
+before anything else, and a local port that is already in use before starting
+the service or tunnel.
+
+## Tool setup
+
+```sh
+sandboxed-agents agent01 tools setup t3
+sandboxed-agents agent01 tools setup azdo
+sandboxed-agents agent01 tools setup azdo --persist
+sandboxed-agents agent01 tools setup azdo --clear
+```
+
+T3 Connect and Azure DevOps setup run the in-container setup through
+`podman exec` as the unprivileged agent in `/workspace` and need no host SSH
+setup. `azdo --persist` saves the PAT environment selection and `--clear`
+removes it. The container-side behavior is described in
+[AGENT-SETUP.md](AGENT-SETUP.md) and
+[TOOLCHAIN.md](TOOLCHAIN.md#set-up-azure-devops). The old `azdo --pat-env`
+form is rejected with a pointer to `tools setup azdo --persist`.
+
+### Azure setup
+
+```sh
+sandboxed-agents agent01 tools setup azure --tenant TENANT --subscription SUBSCRIPTION
+sandboxed-agents agent01 tools setup azure --tenant TENANT --tenant-only
+sandboxed-agents agent01 tools setup azure --interactive --tenant TENANT --subscription SUBSCRIPTION
+sandboxed-agents agent01 tools setup azure --interactive --cloud AzureChinaCloud --tenant TENANT --subscription SUBSCRIPTION
+```
+
+Options are `[--interactive] [--cloud AzureCloud|AzureChinaCloud]
+[--tenant TENANT] [--subscription SUBSCRIPTION | --tenant-only]`, each at most
+once. Other clouds, empty values, tenant values that are not a tenant ID or
+domain name, and `--subscription` together with `--tenant-only` are rejected
+before Podman is contacted.
+
+Without `--interactive`, setup runs in the container through `podman exec` and
+uses Azure CLI device-code sign-in. No host SSH setup or host browser is
+involved.
+
+With `--interactive`, the executable drives a host browser sign-in:
+
+1. It requires managed SSH setup and reports the `ssh-config --install` command
+   when it is missing.
+2. It starts the sandbox's Azure setup program over the pinned SSH connection.
+   A missing tenant or subscription is prompted for on the host terminal.
+3. When the sandbox reports the authorization request, the executable checks
+   that its authority belongs to the selected cloud and that the redirect is a
+   loopback address with a port from 1024 to 65535. It rejects the request if
+   that local port is in use, opens an SSH forward for it, and confirms the
+   forward reaches the sandbox before continuing.
+4. It starts a short-lived redirect server on a random `127.0.0.1` port with a
+   random path, and opens that local URL with `xdg-open` on Linux or
+   `rundll32.exe url.dll,FileProtocolHandler` on Windows. The authorization URL
+   itself is never passed as a browser process argument.
+5. After sign-in, the sandbox commits the new session and the command reports
+   completion. The redirect server and tunnel close on success, failure,
+   cancellation, or the ten-minute timeout.
+
+A failure or cancellation before the commit point keeps the previous sandbox
+session. If the command is interrupted, times out, or fails after the sandbox
+committed the new sign-in, it warns that the sandbox may already use the new
+session and to check with `az account show` inside the sandbox before retrying.
+Interruption exits with status 130. The container-side session handling is
+described in [AZURE-SETUP.md](AZURE-SETUP.md).
+
+The executable's Azure flow has been exercised only against fake processes and a
+scripted protocol. Real sign-in through the executable on Linux or Windows is
+unverified and remains part of the #50 validation.
 
 ## Update sandbox images
 

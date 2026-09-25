@@ -242,6 +242,10 @@ func fakeSSH() {
 	}
 	json.NewEncoder(file).Encode(append([]string{"ssh"}, os.Args[1:]...))
 	file.Close()
+	mode := os.Getenv("SANDBOX_SERVICE_SSH_FAIL")
+	if (mode == "service" && strings.Contains(strings.Join(os.Args[1:], " "), "sandbox-tools service")) || (mode == "tunnel" && strings.Contains(strings.Join(os.Args[1:], " "), "ExitOnForwardFailure=yes")) {
+		os.Exit(29)
+	}
 }
 func TestCheckUsesSSHOnlyAfterOptInAndFingerprintWorks(t *testing.T) {
 	command, log, _ := sshCommand(t, "agent01", "check")
