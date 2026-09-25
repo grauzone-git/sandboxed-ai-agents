@@ -13,6 +13,10 @@ import (
 
 func TestMain(m *testing.M) {
 	if os.Getenv("SANDBOX_CLI_TEST_CHILD") == "1" {
+		if strings.TrimSuffix(filepath.Base(os.Args[0]), ".exe") == "ssh" {
+			fakeSSH()
+			return
+		}
 		if strings.TrimSuffix(filepath.Base(os.Args[0]), ".exe") == "podman" {
 			fakePodman()
 			return

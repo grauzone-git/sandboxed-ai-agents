@@ -20,6 +20,9 @@ func fakeLifecyclePodman() {
 	}
 	json.NewEncoder(f).Encode(args)
 	f.Close()
+	if fakeSSHPodman(args) {
+		return
+	}
 	if fakeCapabilityPodman(args) {
 		return
 	}

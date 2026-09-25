@@ -19,7 +19,7 @@ import (
 
 type createOptions struct {
 	agents, tools, port, cpus, memory, workspace, capabilities string
-	bind                                                       bool
+	bind, sshConfig                                            bool
 }
 
 func lifecycle(command, name string, args []string) error {
@@ -28,12 +28,23 @@ func lifecycle(command, name string, args []string) error {
 		if err != nil {
 			return err
 		}
+		if options.sshConfig {
+			if err := validateSSHSetup(name); err != nil {
+				return err
+			}
+		}
 		if err := requirePodman(); err != nil {
 			return err
 		}
 		return createSandbox(name, options)
 	}
-	if len(args) > 0 && !(command == "remove" && len(args) == 1 && args[0] == "--volumes") {
+	setupSSHRequested := (command == "start" || command == "restart") && len(args) == 1 && args[0] == "--ssh-config"
+	if setupSSHRequested {
+		if err := validateSSHSetup(name); err != nil {
+			return err
+		}
+	}
+	if len(args) > 0 && !setupSSHRequested && !(command == "remove" && len(args) == 1 && args[0] == "--volumes") {
 		return fmt.Errorf("unexpected %s arguments", command)
 	}
 	if err := requirePodman(); err != nil {
@@ -44,7 +55,16 @@ func lifecycle(command, name string, args []string) error {
 	}
 	switch command {
 	case "start", "stop", "restart":
-		return podman(command, name)
+		if err := podman(command, name); err != nil {
+			return err
+		}
+		if setupSSHRequested {
+			if err := waitForEntrypoint(name); err != nil {
+				return err
+			}
+			return setupSSH(name)
+		}
+		return nil
 	case "remove":
 		return removeSandbox(name, len(args) > 0)
 	case "check", "check-full":
@@ -78,6 +98,14 @@ func parseCreate(args []string) (createOptions, error) {
 	seen := map[string]bool{}
 	for i := 0; i < len(args); i++ {
 		flag := args[i]
+		if flag == "--ssh-config" {
+			if seen[flag] {
+				return options, fmt.Errorf("supply --ssh-config only once")
+			}
+			seen[flag] = true
+			options.sshConfig = true
+			continue
+		}
 		if !strings.HasPrefix(flag, "-") && !seen["workspace"] {
 			options.workspace = flag
 			options.bind = true
@@ -340,12 +368,25 @@ func createSandbox(name string, options createOptions) error {
 		return err
 	}
 	if options.tools != "" {
-		return manager(name, "tools", "init", options.tools)
+		err = manager(name, "tools", "init", options.tools)
+	} else {
+		err = manager(name, "tools", "init")
 	}
-	return manager(name, "tools", "init")
+	if err != nil {
+		return err
+	}
+	if options.sshConfig {
+		return setupSSH(name)
+	}
+	return nil
 }
 
 func removeSandbox(name string, removeVolumes bool) error {
+	cleanup, release, err := beginSSHRemoval(name)
+	if err != nil {
+		return err
+	}
+	defer release()
 	volumes := []string{}
 	if removeVolumes {
 		// Validate every retained volume before stopping or deleting the container.
@@ -366,6 +407,9 @@ func removeSandbox(name string, removeVolumes bool) error {
 		return err
 	}
 	if err := podman("rm", name); err != nil {
+		return err
+	}
+	if err := cleanup(); err != nil {
 		return err
 	}
 	for _, volume := range volumes {
@@ -423,7 +467,10 @@ func checkSandbox(name string, full bool) error {
 	if full {
 		args = append(args, "--full")
 	}
-	return podman(args...)
+	if err := podman(args...); err != nil {
+		return err
+	}
+	return checkSSH(name)
 }
 
 func waitForEntrypoint(name string) error {

@@ -3,7 +3,7 @@
 The Go controller is being implemented under
 [#36](https://github.com/grauzone-git/sandboxed-ai-agents/issues/36). This preview
 implements `version`, `build`, `list`, and sandbox lifecycle with optional workspace binds. Use the
-existing scripts for SSH setup, agent/tool management, and updates until their
+existing scripts for agent/tool management and updates until their
 executable issues land.
 
 Build with Go 1.23 or later:
@@ -18,7 +18,7 @@ go build -o sandboxed-agents ./cmd/sandboxed-agents
 On Windows, build `sandboxed-agents.exe`. The binary bundles the container
 build context and can run from an unrelated directory without the checkout,
 Go, Python, Bash, or PowerShell. Podman must already be installed and configured
-rootless. The full executable will also require OpenSSH for opt-in SSH setup.
+rootless. OpenSSH is required for opt-in SSH setup and checking configured SSH access.
 Development tools installed inside images are listed in [TOOLCHAIN.md](TOOLCHAIN.md).
 
 `version` reports the version, Git commit, and SHA256 of bundled asset paths and
@@ -70,8 +70,8 @@ Plain `remove` retains all volumes and their data. `remove --volumes` deletes th
 sandbox's named volumes, including credentials and workspace files. It never
 forces volume deletion. `shell` and `check` use `podman exec` without SSH setup.
 `check` validates mounts before running the in-container smoke test; `check-full`
-also runs its full checks. These lifecycle commands create no local SSH files or
-other host state and write nothing beside the executable.
+also runs its full checks. Without explicit SSH setup, lifecycle commands create no local SSH files.
+They write nothing beside the executable.
 
 ## Bind a workspace
 
@@ -141,3 +141,36 @@ adds no host bind and does not edit machine configuration.
 Windows CI runs the offline command tests on a current Windows Server runner.
 Windows builds older than Windows 11's build 22000 and non-x64 hosts are rejected.
 Live Windows 11 and WSL2 container validation remains a separate release gate.
+
+## Opt in to SSH
+
+```sh
+sandboxed-agents agent01 up --agents codex --ssh-config
+# Or add SSH access to an existing running sandbox:
+sandboxed-agents agent01 ssh-config --install
+ssh agent01
+sandboxed-agents agent01 fingerprint
+```
+
+`start --ssh-config` and `restart --ssh-config` also configure SSH explicitly.
+Without those flags, creation and startup leave `~/.ssh` untouched. Setup runs
+OpenSSH `ssh-keygen`, installs only the public key in the container, and reads
+the server host key directly through Podman. The generated configuration uses
+that pinned key and disables agent and X11 forwarding. Private keys remain on
+the host. Linux file modes and Windows protected ACLs restrict access to the user.
+
+Keys and pinned hosts are stored in `<state>/ssh/NAME/`; the corresponding
+configuration is `<state>/ssh/NAME.conf`. Setup adds one
+`Include "<state>/ssh/*.conf"` line at the beginning of `~/.ssh/config` and
+preserves unrelated content. Repeating setup keeps the existing private key.
+`ssh-config` displays saved configuration, and an existing complete configuration
+can be reinstalled with `--install` while Podman is offline. SSH-only ownership
+metadata prevents another controller group or differently cased sandbox name
+from reusing stale keys; it never authorizes container operations or adoption.
+
+`check` runs the container smoke test through Podman and checks SSH only if a
+private key exists. `remove` deletes this sandbox's managed SSH files after
+successful container removal. It removes the shared Include only when no managed
+configuration remains. Other sandbox keys, unrelated SSH settings, and unknown
+files are retained. Unsafe symlinks or reparse points in managed paths block SSH
+setup and removal before a container is stopped.
