@@ -2,8 +2,9 @@
 
 The Go controller is being implemented under
 [#36](https://github.com/grauzone-git/sandboxed-ai-agents/issues/36). This preview
-implements `version`, `build`, and `list`. Use the existing scripts for lifecycle,
-SSH, agent/tool management, and updates until their executable issues land.
+implements `version`, `build`, `list`, and the named-volume lifecycle. Use the
+existing scripts for SSH setup, agent/tool management, and updates until their
+executable issues land.
 
 Build with Go 1.23 or later:
 
@@ -31,7 +32,7 @@ It lists names, state, SSH ports, enabled agents, and workspace storage without
 starting containers. Checkout-owned sandboxes remain separate until explicit
 adoption is implemented. Installing or running this preview never adopts them.
 
-The future command grammar is `sandboxed-agents NAME COMMAND [PARAMETERS]`.
+The command grammar is `sandboxed-agents NAME COMMAND [PARAMETERS]`.
 Commands such as `build`, `list`, and `version` take no sandbox name; command
 names are reserved. Unsupported commands fail with a preview limitation message.
 
@@ -40,3 +41,34 @@ Run `go test ./...` for the executable's offline public CLI tests. The
 CI runs Go tests and list contracts on Linux and Windows and cross-builds
 linux/amd64, linux/arm64, and windows/amd64. No live Podman execution is implied
 by these offline tests.
+
+## Create and manage a sandbox
+
+```sh
+sandboxed-agents agent01 up --agents codex --cpus 4 --memory 8g
+sandboxed-agents agent01 shell
+sandboxed-agents agent01 check
+sandboxed-agents agent01 stop
+sandboxed-agents agent01 start
+sandboxed-agents agent01 restart
+sandboxed-agents agent01 remove
+```
+
+`up` requires an explicit, nonempty `--agents` selection. Agent and tool names,
+version pins, and tool dependencies use the bundled catalogs. Pass `--tools LIST`
+to replace retained tool selections; omitting it preserves the saved selection.
+`--ssh-port` defaults to `2222`. CPU and memory defaults are `4` and `8g`, with
+`SANDBOX_CPUS` and `SANDBOX_MEMORY` overrides. Both platforms accept these flags.
+
+Workspace, home, and SSH server state use `agent01-workspace`, `agent01-home`,
+and `agent01-sshd` named volumes. Containers carry owner and executable version
+labels; volumes carry the owner label. Existing volumes are reused only when
+owned by the selected controller. Lifecycle commands reject foreign containers,
+and `remove --volumes` validates every volume before stopping the container.
+
+Plain `remove` retains all volumes and their data. `remove --volumes` deletes the
+sandbox's named volumes, including credentials and workspace files. It never
+forces volume deletion. `shell` and `check` use `podman exec` without SSH setup.
+`check` validates mounts before running the in-container smoke test; `check-full`
+also runs its full checks. These lifecycle commands create no local SSH files or
+other host state and write nothing beside the executable.

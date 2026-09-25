@@ -95,7 +95,7 @@ class PowerShellTests(unittest.TestCase):
                                          'TEST_WORKING_DIRECTORY': str(working)},
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(Path(result.stdout.strip()), working)
+            self.assertTrue(Path(result.stdout.strip()).samefile(working))
 
     def test_output_capture_drains_both_streams_and_preserves_blank_lines(self):
         with tempfile.TemporaryDirectory(prefix='sandbox streams ') as directory:

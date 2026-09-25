@@ -36,6 +36,9 @@ jobs:
         with:
           python-version: '3.9'
       - run: go test ./...
+      - name: Check native Windows script transport during handover
+        if: runner.os == 'Windows'
+        run: python -B tests/test-powershell.py
       - name: Build executable and fake command relay
         run: |
           go build -o sandboxed-agents.exe ./cmd/sandboxed-agents

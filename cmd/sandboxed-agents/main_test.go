@@ -24,6 +24,10 @@ func TestMain(m *testing.M) {
 }
 
 func fakePodman() {
+	if os.Getenv("SANDBOX_LIFECYCLE_LOG") != "" {
+		fakeLifecyclePodman()
+		return
+	}
 	args := os.Args[1:]
 	if len(args) == 0 {
 		os.Exit(2)
