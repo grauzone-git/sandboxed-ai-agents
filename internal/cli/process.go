@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 )
 
 const ownerLabel = "io.sandboxed-agents.project"
@@ -26,13 +25,13 @@ func imageName() string {
 }
 
 func podman(args ...string) error {
-	cmd := exec.Command("podman", args...)
+	cmd := platformPodmanCommand(args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	return cmd.Run()
 }
 
 func capturePodman(quiet bool, args ...string) ([]byte, error) {
-	cmd := exec.Command("podman", args...)
+	cmd := platformPodmanCommand(args...)
 	var output bytes.Buffer
 	cmd.Stdout = &output
 	if !quiet {
@@ -44,14 +43,7 @@ func capturePodman(quiet bool, args ...string) ([]byte, error) {
 
 func requirePodman() error {
 	if _, err := exec.LookPath("podman"); err != nil {
-		return fmt.Errorf("Podman is not installed/on PATH. Install Podman 5+, then retry")
+		return fmt.Errorf("%s", podmanPrerequisites)
 	}
-	output, err := capturePodman(false, "info", "--format", "{{.Host.Security.Rootless}}")
-	if err != nil {
-		return err
-	}
-	if strings.TrimSpace(string(output)) != "true" {
-		return fmt.Errorf("Podman must be rootless")
-	}
-	return nil
+	return platformPodmanPreflight()
 }

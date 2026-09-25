@@ -24,6 +24,9 @@ func TestMain(m *testing.M) {
 }
 
 func fakePodman() {
+	if fakeWindowsRuntime() {
+		return
+	}
 	if os.Getenv("SANDBOX_LIFECYCLE_LOG") != "" {
 		fakeLifecyclePodman()
 		return

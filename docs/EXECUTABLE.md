@@ -112,3 +112,32 @@ except for the required hostname and namespace calls. It is saved under
 `<state>/seccomp/<version>/nested-podman.json`, with a private directory and file,
 and replaced when its content differs. Nothing is written beside the executable.
 Windows guest profile staging remains part of #43.
+
+## Windows runtime
+
+Windows 11 x64 requires Podman 6.0+ on both the client and its existing rootless
+WSL2 machine. Start and configure the machine yourself. The controller never
+creates or starts a machine. `CONTAINER_CONNECTION` selects a configured local
+machine connection; otherwise the default connection is used. `CONTAINER_HOST`,
+remote engines, rootful engines, and Hyper-V machines are rejected. The selected
+connection must match the running machine's SSH endpoint. Every engine command
+uses that connection explicitly. The machine must delegate cgroups v2 CPU,
+memory, and process limits.
+
+Local workspace paths retain their Windows drive spelling when passed to
+Podman. Junctions and short-name aliases resolve through Windows file handles
+before protection checks; comparisons ignore case. UNC paths, device paths,
+network drives, alternate data streams, and names ending with a dot or space
+are rejected. Temporary build contexts and controller state receive a private
+ACL for the current user.
+
+For `--capabilities podman`, the controller checks the machine's devices and
+subordinate UID/GID ranges, reads its seccomp policy, and preserves restrictions
+unrelated to nested namespace setup. The versioned policy is stored locally,
+then copied over machine SSH into a private, content-addressed guest file that
+survives machine restarts. Its guest path becomes the seccomp argument. This
+adds no host bind and does not edit machine configuration.
+
+Windows CI runs the offline command tests on a current Windows Server runner.
+Windows builds older than Windows 11's build 22000 and non-x64 hosts are rejected.
+Live Windows 11 and WSL2 container validation remains a separate release gate.

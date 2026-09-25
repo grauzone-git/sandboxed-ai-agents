@@ -22,12 +22,12 @@ func privateStateDirectory(state, directory string) error {
 		}
 	} else if err != nil {
 		return err
-	} else if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+	} else if !info.IsDir() || pathRedirected(info) {
 		return fmt.Errorf("private state directory must not be redirected: %s", directory)
 	}
 	// Do not change permissions on the user's home or other state ancestors.
 	if containsPath(state, directory) {
-		return os.Chmod(directory, 0700)
+		return securePrivatePath(directory)
 	}
 	return nil
 }

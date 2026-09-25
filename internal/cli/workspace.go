@@ -40,7 +40,7 @@ func canonicalPath(path string) (string, error) {
 	current := filepath.Clean(absolute)
 	var missing []string
 	for {
-		resolved, err := filepath.EvalSymlinks(current)
+		resolved, err := resolveExistingPath(current)
 		if err == nil {
 			for i := len(missing) - 1; i >= 0; i-- {
 				resolved = filepath.Join(resolved, missing[i])
@@ -78,6 +78,9 @@ func workspacePath(path string) (string, error) {
 	}
 	if runtime.GOOS != "windows" && strings.Contains(path, ":") {
 		return "", fmt.Errorf("unsupported workspace path: %s", path)
+	}
+	if err := validateLocalWorkspace(path); err != nil {
+		return "", err
 	}
 	workspace, err := canonicalPath(path)
 	if err != nil {

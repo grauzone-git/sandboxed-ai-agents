@@ -24,6 +24,9 @@ func withBuildContext(action func(string) error) (result error) {
 			}
 		}
 	}()
+	if err := securePrivatePath(context); err != nil {
+		return err
+	}
 	err = fs.WalkDir(sandboxassets.Files, "src/container", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err

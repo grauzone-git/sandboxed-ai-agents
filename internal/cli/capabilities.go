@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"slices"
 	"strings"
 )
@@ -30,9 +29,6 @@ func prepareCapabilities(image, capability string) (string, []string, error) {
 	if capability == "none" {
 		return image, []string{"--security-opt=no-new-privileges"}, nil
 	}
-	if runtime.GOOS != "linux" {
-		return "", nil, fmt.Errorf("nested Podman machine profile staging is not available in this preview")
-	}
 	base, err := capturePodman(false, "image", "inspect", "--format", "{{.Id}}", image)
 	if err != nil {
 		return "", nil, err
@@ -41,7 +37,7 @@ func prepareCapabilities(image, capability string) (string, []string, error) {
 	if !imageIDPattern.MatchString(identity) {
 		return "", nil, fmt.Errorf("Podman returned an invalid base image ID")
 	}
-	profile, err := prepareNestedSeccomp()
+	profile, err := platformNestedSeccomp()
 	if err != nil {
 		return "", nil, err
 	}
@@ -64,7 +60,7 @@ func prepareCapabilities(image, capability string) (string, []string, error) {
 	return derived, []string{"--device=/dev/fuse", "--device=/dev/net/tun", "--security-opt=label=disable", "--security-opt=apparmor=unconfined", "--security-opt=unmask=ALL", "--security-opt=seccomp=" + profile, "--tmpfs", "/run/user/1000:rw,nosuid,nodev,noexec,mode=0700"}, nil
 }
 
-func prepareNestedSeccomp() (string, error) {
+func prepareLocalNestedSeccomp() (string, error) {
 	data, err := capturePodman(false, "info", "--format", "{{json .Host.Security}}")
 	if err != nil {
 		return "", err
@@ -79,24 +75,32 @@ func prepareNestedSeccomp() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read host seccomp profile: %w", err)
 	}
+	content, err := nestedSeccompContent(data)
+	if err != nil {
+		return "", err
+	}
+	return storeNestedSeccomp(content)
+}
+
+func nestedSeccompContent(data []byte) ([]byte, error) {
 	var profile map[string]json.RawMessage
 	if json.Unmarshal(data, &profile) != nil || profile == nil {
-		return "", fmt.Errorf("invalid host seccomp profile")
+		return nil, fmt.Errorf("invalid host seccomp profile")
 	}
 	var defaultAction string
 	if json.Unmarshal(profile["defaultAction"], &defaultAction) != nil || !slices.Contains([]string{"SCMP_ACT_ERRNO", "SCMP_ACT_KILL", "SCMP_ACT_KILL_PROCESS", "SCMP_ACT_KILL_THREAD", "SCMP_ACT_TRAP"}, defaultAction) {
-		return "", fmt.Errorf("nested Podman requires a deny-by-default host seccomp profile")
+		return nil, fmt.Errorf("nested Podman requires a deny-by-default host seccomp profile")
 	}
 	var rules []map[string]json.RawMessage
 	if json.Unmarshal(profile["syscalls"], &rules) != nil || rules == nil {
-		return "", fmt.Errorf("invalid host seccomp syscall rules")
+		return nil, fmt.Errorf("invalid host seccomp syscall rules")
 	}
 	nested := []string{"sethostname", "setdomainname", "setns"}
 	retained := make([]map[string]json.RawMessage, 0, len(rules)+1)
 	for _, rule := range rules {
 		var names []string
 		if json.Unmarshal(rule["names"], &names) != nil || names == nil {
-			return "", fmt.Errorf("invalid host seccomp syscall names")
+			return nil, fmt.Errorf("invalid host seccomp syscall names")
 		}
 		filtered := make([]string, 0, len(names))
 		for _, name := range names {
@@ -115,9 +119,12 @@ func prepareNestedSeccomp() (string, error) {
 	profile["syscalls"], _ = json.Marshal(retained)
 	content, err := json.MarshalIndent(profile, "", "  ")
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	content = append(content, '\n')
+	return append(content, '\n'), nil
+}
+
+func storeNestedSeccomp(content []byte) (string, error) {
 	state, err := stateDir()
 	if err != nil {
 		return "", err
@@ -131,10 +138,10 @@ func prepareNestedSeccomp() (string, error) {
 	}
 	target := filepath.Join(directory, "nested-podman.json")
 	if info, err := os.Lstat(target); err == nil {
-		if !info.Mode().IsRegular() {
+		if !info.Mode().IsRegular() || pathRedirected(info) {
 			return "", fmt.Errorf("seccomp state must be a regular file: %s", target)
 		}
-		if err := os.Chmod(target, 0600); err != nil {
+		if err := securePrivatePath(target); err != nil {
 			return "", err
 		}
 	} else if !os.IsNotExist(err) {
@@ -148,6 +155,10 @@ func prepareNestedSeccomp() (string, error) {
 		return "", err
 	}
 	defer os.Remove(temporary.Name())
+	if err := securePrivatePath(temporary.Name()); err != nil {
+		temporary.Close()
+		return "", err
+	}
 	if _, err := temporary.Write(content); err != nil {
 		temporary.Close()
 		return "", err
