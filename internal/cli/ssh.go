@@ -120,7 +120,13 @@ func (files sshFiles) lock() (func(), error) {
 	if err := securePrivatePath(files.root); err != nil {
 		return nil, err
 	}
-	lock := filepath.Join(files.root, ".config-lock")
+	return lockSSHDirectory(filepath.Join(files.root, ".config-lock"))
+}
+
+func lockSSHDirectory(lock string) (func(), error) {
+	if err := noSSHLinks(lock); err != nil {
+		return nil, err
+	}
 	if err := os.Mkdir(lock, 0700); err != nil {
 		return nil, fmt.Errorf("SSH config update is locked or unavailable: %s: %w", lock, err)
 	}
@@ -128,6 +134,10 @@ func (files sshFiles) lock() (func(), error) {
 }
 
 func writeSSHFile(path string, data []byte) error {
+	return writeSSHFileChecked(path, data, nil)
+}
+
+func writeSSHFileChecked(path string, data []byte, check func() error) error {
 	if err := noSSHLinks(path); err != nil {
 		return err
 	}
@@ -148,6 +158,11 @@ func writeSSHFile(path string, data []byte) error {
 	if err = file.Close(); err != nil {
 		return err
 	}
+	if check != nil {
+		if err := check(); err != nil {
+			return err
+		}
+	}
 	return os.Rename(temporary, path)
 }
 
@@ -156,30 +171,15 @@ func (files sshFiles) include(install bool) error {
 		return err
 	}
 	original, err := os.ReadFile(files.hostConfig)
+	existed := err == nil
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	if !utf8.Valid(original) {
-		return fmt.Errorf("SSH config must use UTF-8")
+	updatedBytes, err := files.includeContent(original, install)
+	if err != nil {
+		return err
 	}
-	include := `Include "` + filepath.ToSlash(filepath.Join(files.root, "*.conf")) + `"`
-	content := string(original)
-	bom := ""
-	if strings.HasPrefix(content, "\ufeff") {
-		bom = "\ufeff"
-		content = strings.TrimPrefix(content, bom)
-	}
-	var remaining strings.Builder
-	for _, line := range strings.SplitAfter(content, "\n") {
-		if strings.TrimSpace(line) != include {
-			remaining.WriteString(line)
-		}
-	}
-	updated := remaining.String()
-	if install {
-		updated = include + "\n" + updated
-	}
-	updated = bom + updated
+	updated := string(updatedBytes)
 	if updated == string(original) {
 		return nil
 	}
@@ -189,14 +189,7 @@ func (files sshFiles) include(install bool) error {
 	if err := securePrivatePath(filepath.Dir(files.hostConfig)); err != nil {
 		return err
 	}
-	latest, err := os.ReadFile(files.hostConfig)
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	if !bytes.Equal(latest, original) {
-		return fmt.Errorf("SSH config changed; retry. Existing config was retained")
-	}
-	return writeSSHFile(files.hostConfig, []byte(updated))
+	return replaceSSHConfig(files.hostConfig, []byte(updated), original, existed, nil)
 }
 
 func setupSSH(name string) error {
@@ -228,17 +221,9 @@ func setupSSH(name string) error {
 	if err != nil || number < 1024 || number > 65535 {
 		return fmt.Errorf("unexpected SSH port mapping")
 	}
-	data, err := capturePodman(false, "exec", "--user", "0", name, "/bin/cat", "/var/lib/agent-sshd/ssh_host_ed25519_key.pub")
+	fields, err := sandboxSSHHostKey(name)
 	if err != nil {
 		return err
-	}
-	fields := strings.Fields(string(data))
-	if len(fields) < 2 || fields[0] != "ssh-ed25519" {
-		return fmt.Errorf("sandbox did not return an Ed25519 host key")
-	}
-	decoded, err := base64.StdEncoding.DecodeString(fields[1])
-	if err != nil || len(decoded) != 51 || binary.BigEndian.Uint32(decoded[:4]) != 11 || string(decoded[4:15]) != "ssh-ed25519" || binary.BigEndian.Uint32(decoded[15:19]) != 32 {
-		return fmt.Errorf("invalid Ed25519 SSH host key")
 	}
 
 	if err := os.MkdirAll(files.directory, 0700); err != nil {
@@ -280,8 +265,8 @@ func setupSSH(name string) error {
 	if err := writeSSHFile(files.known, []byte(known)); err != nil {
 		return err
 	}
-	config := fmt.Sprintf("Host %s\n    HostName 127.0.0.1\n    Port %s\n    User agent\n    IdentityFile \"%s\"\n    IdentitiesOnly yes\n    IdentityAgent none\n    ForwardAgent no\n    ForwardX11 no\n    UserKnownHostsFile \"%s\"\n    StrictHostKeyChecking yes\n    ServerAliveInterval 30\n", name, port, filepath.ToSlash(files.key), filepath.ToSlash(files.known))
-	if err := writeSSHFile(files.entry, []byte(config)); err != nil {
+
+	if err := writeSSHFile(files.entry, files.hostEntry(port)); err != nil {
 		return err
 	}
 	if err := files.include(true); err != nil {
@@ -425,4 +410,73 @@ func beginSSHRemoval(name string) (func() error, func(), error) {
 		return files.include(false)
 	}
 	return cleanup, release, nil
+}
+
+func (files sshFiles) includeContent(original []byte, install bool) ([]byte, error) {
+	if !utf8.Valid(original) {
+		return nil, fmt.Errorf("SSH config must use UTF-8")
+	}
+	include := `Include "` + filepath.ToSlash(filepath.Join(files.root, "*.conf")) + `"`
+	content := string(original)
+	bom := ""
+	if strings.HasPrefix(content, "\ufeff") {
+		bom = "\ufeff"
+		content = strings.TrimPrefix(content, bom)
+	}
+	var remaining strings.Builder
+	for _, line := range strings.SplitAfter(content, "\n") {
+		if strings.TrimSpace(line) != include {
+			remaining.WriteString(line)
+		}
+	}
+	updated := remaining.String()
+	if install {
+		updated = include + "\n" + updated
+	}
+	updated = bom + updated
+	return []byte(updated), nil
+}
+
+func replaceSSHConfig(path string, data, expected []byte, existed bool, check func() error) error {
+	return writeSSHFileChecked(path, data, func() error {
+		if err := noSSHLinks(path); err != nil {
+			return err
+		}
+		current, err := os.ReadFile(path)
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		if (err == nil) != existed || !bytes.Equal(current, expected) {
+			return fmt.Errorf("SSH config changed; retry. Existing config was retained")
+		}
+		if check != nil {
+			return check()
+		}
+		return nil
+	})
+}
+
+func validEd25519Blob(encoded string) bool {
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	return err == nil && len(decoded) == 51 && binary.BigEndian.Uint32(decoded[:4]) == 11 && string(decoded[4:15]) == "ssh-ed25519" && binary.BigEndian.Uint32(decoded[15:19]) == 32
+}
+
+func (files sshFiles) hostEntry(port string) []byte {
+	return []byte(fmt.Sprintf("Host %s\n    HostName 127.0.0.1\n    Port %s\n    User agent\n    IdentityFile \"%s\"\n    IdentitiesOnly yes\n    IdentityAgent none\n    ForwardAgent no\n    ForwardX11 no\n    UserKnownHostsFile \"%s\"\n    StrictHostKeyChecking yes\n    ServerAliveInterval 30\n", files.name, port, filepath.ToSlash(files.key), filepath.ToSlash(files.known)))
+}
+
+func sandboxSSHHostKey(name string) ([]string, error) {
+	data, err := capturePodman(false, "exec", "--user", "0", name, "/bin/cat", "/var/lib/agent-sshd/ssh_host_ed25519_key.pub")
+	if err != nil {
+		return nil, err
+	}
+	fields := strings.Fields(string(data))
+	if len(fields) < 2 || fields[0] != "ssh-ed25519" {
+		return nil, fmt.Errorf("sandbox did not return an Ed25519 host key")
+	}
+	if !validEd25519Blob(fields[1]) {
+		return nil, fmt.Errorf("invalid Ed25519 SSH host key")
+	}
+
+	return fields, nil
 }

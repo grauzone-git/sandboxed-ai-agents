@@ -5,10 +5,8 @@ The Go controller is being implemented under
 implements `version`, `build`, `list`, sandbox lifecycle with optional workspace
 binds, sandbox image updates from #45, agent and tool management and sessions
 from #46, and services, forwarding, and tool setup (T3, Azure DevOps, and Azure,
-including host browser sign-in) from #47. Adoption of checkout-owned sandboxes
-remains an upcoming executable command under #48; `adopt` is a reserved name
-that currently fails with a preview limitation message. No release has been
-published. Use the existing scripts for adoption until #48 lands.
+including host browser sign-in) from #47, and explicit adoption of
+checkout-owned sandboxes from #48. No release has been published.
 
 Build with Go 1.23 or later:
 
@@ -35,8 +33,10 @@ after success or failure. `SANDBOX_IMAGE` selects the image tag.
 
 `list` uses owner `default`. Set `SANDBOX_CONTROLLER` to choose another group.
 It lists names, state, SSH ports, enabled agents, and workspace storage without
-starting containers. Checkout-owned sandboxes remain separate until explicit
-adoption is implemented. Installing or running this preview never adopts them.
+starting containers. Checkout-owned sandboxes stay separate: `list` names them
+after the table with the `adopt` command for each, and changes nothing.
+Installing or running this preview never adopts them; see
+[Adopt checkout-owned sandboxes](#adopt-checkout-owned-sandboxes).
 
 The command grammar is `sandboxed-agents NAME COMMAND [PARAMETERS]`.
 Commands such as `build`, `list`, and `version` take no sandbox name; command
@@ -71,7 +71,7 @@ to replace retained tool selections; omitting it preserves the saved selection.
 
 By default, workspace, home, and SSH server state use `agent01-workspace`, `agent01-home`,
 and `agent01-sshd` named volumes. Containers carry owner and executable version
-labels; volumes carry the owner label. Existing volumes are reused only when
+labels; volumes carry the owner label. `up` reuses existing volumes only when
 owned by the selected controller. Lifecycle commands reject foreign containers,
 and `remove --volumes` validates every volume before stopping the container.
 
@@ -361,7 +361,8 @@ sandbox keeps its existing selection.
 Sandboxes are replaced one at a time. Each is checked again before replacement,
 stopped if running, and renamed to a backup. Its replacement uses the same
 workspace volume or bind directory, home and SSH server volumes, port, CPU,
-memory, process and shared-memory limits, and the selected capability. The
+memory, process and shared-memory limits, and the selected capability, and
+keeps an adopted sandbox's `io.sandboxed-agents.adopted-from` label. The
 controller starts it, waits up to 15 seconds for its SSH server to become
 ready, and boots the saved agent and tool selections. Output from failed
 readiness checks is suppressed while retrying; if the wait times out, the error
@@ -388,3 +389,84 @@ the remaining ones are not changed.
 `list` adds `(outdated)` to the state of a sandbox whose version label is older
 than the executable. Unknown or missing version labels are not guessed. Listing
 never updates a sandbox automatically.
+
+## Adopt checkout-owned sandboxes
+
+Sandboxes created by the checkout scripts are owned by the checkout's absolute
+path in `io.sandboxed-agents.project`. The executable manages them only after
+explicit adoption:
+
+```sh
+sandboxed-agents list
+sandboxed-agents agent01 adopt --from /home/me/sandboxed-ai-agents
+sandboxed-agents adopt --all --from /home/me/sandboxed-ai-agents
+```
+
+`list` is read-only. After its table it prints one line per checkout-owned
+sandbox with the quoted `adopt` command to run. `--from` must be the exact
+absolute owner path and must differ from the selected controller group. A named
+sandbox whose owner label is not that path is refused. `--all` selects only
+containers whose owner label equals that path; sandboxes of other checkouts or
+controller groups are never included. Nothing is adopted implicitly.
+
+Adoption uses the update path. Every selected sandbox is validated first
+(state, port mapping, mounts, and volume owners), along with any legacy SSH
+state, then the bundled image is rebuilt without the build cache. Each
+container is recreated with the selected controller as owner and
+`io.sandboxed-agents.adopted-from=PATH`, keeping the same workspace volume or
+bind, home and SSH server volumes, port, limits, and capability. Until the
+replacement commits, which includes any [SSH migration](#ssh-migration),
+failures and interruptions roll back to the original container as described in
+[Update sandbox images](#update-sandbox-images). Once it commits, the adoption
+is kept: if removing the stopped backup then fails or is interrupted, the
+adopted container stays in place and usable, and the error names the retained
+backup to inspect. With `--all`, the first failure stops the run; sandboxes
+already adopted stay adopted.
+
+Volumes and their data are not modified, and their owner label keeps the
+checkout path. The current container's `adopted-from` label is what makes them
+count as owned: `update` and `remove --volumes` accept a volume labelled with
+either the controller group or the `adopted-from` path of the container that
+mounts it. `up` without an existing container has no such label to consult, so
+after a plain `remove` it refuses the checkout-labelled volumes.
+
+After adoption the checkout scripts' ownership check rejects the sandbox. Manage
+it with the executable only.
+
+### SSH migration
+
+If `~/.ssh/sanboxed-agents/NAME/` holds the scripts' SSH files for the sandbox,
+adoption moves them to the executable's state directory as part of the same
+transaction. The key pair and the pinned host key are kept, so existing SSH
+clients keep working without a new host key prompt. The scripts' `Include` line
+for that sandbox is removed from `~/.ssh/config` and the executable's
+`Include "<state>/ssh/*.conf"` line is added; other lines are kept.
+
+Nothing is moved until the replacement container is ready and has been checked:
+it must present the pinned host key and authorize the migrated client key,
+otherwise adoption rolls back. The move is the last step before the backup is
+removed, and rewriting `~/.ssh/config` commits it. If the move fails or is
+interrupted before that, the legacy files are restored, the new copies are
+removed, and the original container is rolled back. A file that changed in the
+meantime is kept and named in the error, and if a legacy file cannot be
+restored the new copies are kept too. Once `~/.ssh/config` is rewritten,
+the SSH move and the adoption are not rolled back.
+
+Adoption refuses, before anything is stopped, legacy SSH state that is:
+
+- incomplete, or uses symlinks or non-regular files;
+- recorded in `owner.json` for another checkout or sandbox name;
+- pinned to anything other than one Ed25519 host key for `127.0.0.1` on the
+  sandbox's port, or holds an invalid key;
+- a key pair whose public key does not match the private key;
+- in conflict with executable SSH files that already exist for the sandbox.
+
+It also refuses to finish if the legacy files change during adoption.
+
+When the legacy directory is absent or empty, adoption does not opt in to SSH:
+it writes no SSH files and leaves `~/.ssh` untouched. Run
+`sandboxed-agents agent01 ssh-config --install` afterwards to opt in.
+
+Adoption has been exercised only with fake Podman and SSH processes. Adoption
+of real Linux or Windows sandboxes, including their SSH access, is unverified
+and remains part of the #50 validation.

@@ -62,7 +62,9 @@ theirs. It also means moving the checkout orphans existing sandboxes.
 
 The standalone executable preview uses a stable controller group instead:
 `default`, or the name in `SANDBOX_CONTROLLER`. A group and a checkout are
-separate owners. The executable does not implicitly adopt checkout resources.
+separate owners. The executable does not implicitly adopt checkout resources;
+`adopt --from PATH` transfers a checkout's sandbox explicitly and records the
+old owner in `io.sandboxed-agents.adopted-from`.
 
 ## How the pieces fit
 

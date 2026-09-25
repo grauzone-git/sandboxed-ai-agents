@@ -42,9 +42,10 @@ type updateContainer struct {
 func (container updateContainer) name() string { return strings.TrimPrefix(container.Name, "/") }
 
 type updatePlan struct {
-	capability string
-	container  updateContainer
-	options    createOptions
+	capability    string
+	expectedOwner string
+	container     updateContainer
+	options       createOptions
 }
 type updateImage struct {
 	image       string
@@ -104,7 +105,7 @@ func update(name string, args []string) error {
 	}
 	plans := make([]updatePlan, 0, len(names))
 	for _, name := range names {
-		info, err := inspectUpdateContainer(name)
+		info, err := inspectUpdateContainer(name, owner())
 		if err != nil {
 			return err
 		}
@@ -112,7 +113,7 @@ func update(name string, args []string) error {
 			fmt.Fprintf(os.Stdout, "Skipping update backup %s; retain it until recovery is complete.\n", name)
 			continue
 		}
-		plan, err := planUpdate(info)
+		plan, err := planUpdateForOwner(info, owner())
 		if err != nil {
 			return err
 		}
@@ -124,18 +125,32 @@ func update(name string, args []string) error {
 	if len(plans) == 0 {
 		return nil
 	}
-	if !noBuild {
-		if err := build([]string{"--no-cache"}); err != nil {
+	images, err := prepareUpdateImages(plans, !noBuild)
+	if err != nil {
+		return err
+	}
+	for _, plan := range plans {
+		selected := plan.selectedCapability()
+		if err := replaceSandbox(plan, images[selected]); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func prepareUpdateImages(plans []updatePlan, buildImage bool) (map[string]updateImage, error) {
+	if buildImage {
+		if err := build([]string{"--no-cache"}); err != nil {
+			return nil, err
 		}
 	}
 	data, err := capturePodman(false, "image", "inspect", "--format", "{{.Id}}", imageName())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	frozen := strings.TrimSpace(string(data))
 	if !imageIDPattern.MatchString(frozen) {
-		return fmt.Errorf("Podman returned an invalid image ID")
+		return nil, fmt.Errorf("Podman returned an invalid image ID")
 	}
 	images := map[string]updateImage{}
 	for _, plan := range plans {
@@ -145,17 +160,11 @@ func update(name string, args []string) error {
 		}
 		image, runtimeArgs, err := prepareCapabilities(frozen, selected)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		images[selected] = updateImage{image, runtimeArgs}
 	}
-	for _, plan := range plans {
-		selected := plan.selectedCapability()
-		if err := replaceSandbox(plan, images[selected]); err != nil {
-			return err
-		}
-	}
-	return nil
+	return images, nil
 }
 
 func (plan updatePlan) selectedCapability() string {
@@ -184,7 +193,7 @@ func isUpdateBackup(info updateContainer) bool {
 	return home && ssh
 }
 
-func readUpdateContainer(reference string) (updateContainer, error) {
+func readUpdateContainer(reference, expectedOwner string) (updateContainer, error) {
 	data, err := capturePodman(false, "container", "inspect", reference)
 	if err != nil {
 		return updateContainer{}, err
@@ -197,17 +206,17 @@ func readUpdateContainer(reference string) (updateContainer, error) {
 	if !containerIDPattern.MatchString(info.Id) {
 		return updateContainer{}, fmt.Errorf("invalid container identity: %s", reference)
 	}
-	if info.Config.Labels[ownerLabel] != owner() {
+	if info.Config.Labels[ownerLabel] != expectedOwner {
 		return updateContainer{}, fmt.Errorf("container %s is not owned by this configuration", reference)
 	}
 	return info, nil
 }
 
-func inspectUpdateContainer(name string) (updateContainer, error) {
+func inspectUpdateContainer(name, expectedOwner string) (updateContainer, error) {
 	if !namePattern.MatchString(name) {
 		return updateContainer{}, fmt.Errorf("invalid sandbox name: %s", name)
 	}
-	info, err := readUpdateContainer(name)
+	info, err := readUpdateContainer(name, expectedOwner)
 	if err != nil {
 		return updateContainer{}, err
 	}
@@ -217,8 +226,8 @@ func inspectUpdateContainer(name string) (updateContainer, error) {
 	return info, nil
 }
 
-func inspectUpdateContainerID(id string) (updateContainer, error) {
-	info, err := readUpdateContainer(id)
+func inspectUpdateContainerID(id, expectedOwner string) (updateContainer, error) {
+	info, err := readUpdateContainer(id, expectedOwner)
 	if err != nil {
 		return updateContainer{}, err
 	}
@@ -228,11 +237,22 @@ func inspectUpdateContainerID(id string) (updateContainer, error) {
 	return info, nil
 }
 
-func planUpdate(info updateContainer) (updatePlan, error) {
+func snapshotUpdateForOwner(name, expectedOwner string) (updatePlan, error) {
+	info, err := inspectUpdateContainer(name, expectedOwner)
+	if err != nil {
+		return updatePlan{}, err
+	}
+	return planUpdateForOwner(info, expectedOwner)
+}
+
+func planUpdateForOwner(info updateContainer, expectedOwner string) (updatePlan, error) {
 	var plan updatePlan
 	name := info.name()
 	if !slices.Contains([]string{"running", "exited", "created", "stopped"}, info.State.Status) || info.State.Running != (info.State.Status == "running") {
 		return plan, fmt.Errorf("cannot update %s in state %s", name, info.State.Status)
+	}
+	if expectedOwner != owner() && info.Config.Labels[adoptedFromLabel] != "" {
+		return plan, fmt.Errorf("checkout sandbox has unexpected adopted-from metadata")
 	}
 	capability := info.Config.Labels[capabilitiesLabel]
 	if capability == "" {
@@ -300,7 +320,7 @@ func planUpdate(info updateContainer) (updatePlan, error) {
 			if mount.Type != "volume" || mount.Name != volume {
 				return plan, fmt.Errorf("unexpected mount at %s", mount.Destination)
 			}
-			if err := requireVolumeOwned(volume); err != nil {
+			if err := requireContainerVolumeOwned(volume, expectedOwner, &info); err != nil {
 				return plan, err
 			}
 		}
@@ -309,6 +329,7 @@ func planUpdate(info updateContainer) (updatePlan, error) {
 	if len(expected) != 0 {
 		return plan, fmt.Errorf("missing sandbox mounts in %s", name)
 	}
+	plan.expectedOwner = expectedOwner
 	plan.container = info
 	plan.options = options
 	return plan, nil
@@ -328,8 +349,23 @@ const updateTransactionLabel = "io.sandboxed-agents.update-transaction"
 
 var containerIDPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
-func replaceSandbox(plan updatePlan, image updateImage) (result error) {
+func replaceSandbox(plan updatePlan, image updateImage) error {
 	capability := plan.selectedCapability()
+	labels := map[string]string{}
+	if source := plan.container.Config.Labels[adoptedFromLabel]; source != "" {
+		labels[adoptedFromLabel] = source
+	}
+	return replaceSandboxForOwner(plan, capability, image, replacementTarget{owner: owner(), labels: labels})
+}
+
+type replacementTarget struct {
+	owner        string
+	labels       map[string]string
+	checkReady   func(string) error
+	beforeCommit func(context.Context) error
+}
+
+func replaceSandboxForOwner(plan updatePlan, capability string, image updateImage, target replacementTarget) (result error) {
 	ctx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
 	run := func(args ...string) error {
@@ -340,11 +376,7 @@ func replaceSandbox(plan updatePlan, image updateImage) (result error) {
 		return err
 	}
 	name := plan.container.name()
-	info, err := inspectUpdateContainer(name)
-	if err != nil {
-		return err
-	}
-	current, err := planUpdate(info)
+	current, err := snapshotUpdateForOwner(name, plan.expectedOwner)
 	if err != nil {
 		return err
 	}
@@ -396,7 +428,7 @@ func replaceSandbox(plan updatePlan, image updateImage) (result error) {
 		}
 		var rollback error
 		if renameAttempted && !renamed {
-			original, err := inspectUpdateContainerID(oldID)
+			original, err := inspectUpdateContainerID(oldID, plan.expectedOwner)
 			if err != nil {
 				rollback = fmt.Errorf("could not confirm the original container after rename: %w", err)
 			} else {
@@ -412,7 +444,7 @@ func replaceSandbox(plan updatePlan, image updateImage) (result error) {
 		if newID == "" {
 			newID = readCandidate()
 			if newID == "" && renamed {
-				candidate, err := inspectUpdateContainer(name)
+				candidate, err := inspectUpdateContainer(name, target.owner)
 				if err == nil && candidate.Id != oldID && candidate.Config.Labels[updateTransactionLabel] == transaction {
 					newID = candidate.Id
 				}
@@ -443,8 +475,12 @@ func replaceSandbox(plan updatePlan, image updateImage) (result error) {
 	renamed = true
 	options := plan.options
 	options.capabilities = capability
+	labels := map[string]string{updateTransactionLabel: transaction}
+	for key, value := range target.labels {
+		labels[key] = value
+	}
 	args := containerArguments(name, options, image.image, image.runtimeArgs, containerCreation{
-		command: "create", cidfile: cidfile, transaction: transaction,
+		command: "create", owner: target.owner, cidfile: cidfile, labels: labels,
 	})
 	if err := run(args...); err != nil {
 		return err
@@ -464,8 +500,24 @@ func replaceSandbox(plan updatePlan, image updateImage) (result error) {
 			return err
 		}
 	}
+	if ctx.Err() != nil {
+		return updateInterrupted(ctx.Err())
+	}
+	if target.checkReady != nil {
+		if err := target.checkReady(newID); err != nil {
+			return err
+		}
+	}
 	if !plan.container.State.Running {
 		if err := run("stop", newID); err != nil {
+			return err
+		}
+	}
+	if ctx.Err() != nil {
+		return updateInterrupted(ctx.Err())
+	}
+	if target.beforeCommit != nil {
+		if err := target.beforeCommit(ctx); err != nil {
 			return err
 		}
 	}

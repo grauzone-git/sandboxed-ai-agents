@@ -24,7 +24,7 @@ if args[:1] == ['info']:
 elif args[:1] == ['ps']:
     wanted = args[args.index('--filter') + 1].removeprefix('label=')
     for item in containers:
-        if any(f'{key}={value}' == wanted for key, value in (item['Config']['Labels'] or {}).items()):
+        if any(wanted in (key, f'{key}={value}') for key, value in (item['Config']['Labels'] or {}).items()):
             print(item['Name'])
 elif args[:2] == ['container', 'inspect']:
     found = [item for item in containers if item['Name'] == args[-1] and not item.get('vanished')]
@@ -74,9 +74,10 @@ class ListTests(unittest.TestCase):
                     'USERPROFILE': str(self.root / 'home'), 'LOCALAPPDATA': str(self.root / 'local'),
                     'XDG_STATE_HOME': str(self.root / 'state'),
                     'TEST_PODMAN_LOG': str(self.log), 'TEST_CONTAINERS': str(self.containers)}
-        launcher = describe_launcher(self.checkout, self.env)
+        launcher = describe_launcher(self.checkout, self.env, details=True)
         self.command = launcher['command']
         self.owner = launcher['owner']
+        self.executable = launcher['executable']
         self.env['TEST_OWNER'] = self.owner
 
     def cli(self, *args, containers=()):
@@ -92,7 +93,7 @@ class ListTests(unittest.TestCase):
         result = self.cli('list', containers=[
             container('agent02', owner, running=False, port=2223, workspace='/work/agent02'),
             container('agent01', owner, agents={'codex': 'latest', 'claude': 'latest'}),
-            container('foreign', '/another/checkout', agents={'codex': 'latest'}),
+            container('foreign', 'another-controller', agents={'codex': 'latest'}),
             {**container('unlabelled', owner), 'Config': {'Labels': None}},
         ])
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -104,6 +105,19 @@ class ListTests(unittest.TestCase):
         ])
         self.assertNotIn('foreign', result.stdout)
         self.assertNotIn('unlabelled', result.stdout)
+
+    def test_checkout_resources_are_only_reported_as_adoptable_by_executable(self):
+        checkout_owner = str(self.root / 'old-checkout')
+        result = self.cli('list', containers=[container('legacy', checkout_owner)])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        lines = result.stdout.splitlines()
+        self.assertRegex(lines[0], r'^No sandboxes owned by (this checkout|controller [^.]+)\.$')
+        if self.executable:
+            self.assertEqual(lines[1:], [
+                f"legacy is checkout-owned. To adopt: sandboxed-agents legacy adopt --from '{checkout_owner}'"])
+        else:
+            self.assertEqual(len(lines), 1)
+        self.assertFalse(any(call[0] not in ('info', 'ps', 'container') for call in self.podman_calls()))
 
     def test_sandbox_removed_while_listing_is_skipped(self):
         owner = self.owner
@@ -119,7 +133,7 @@ class ListTests(unittest.TestCase):
         self.assertLessEqual(commands, {'info', 'ps', 'container inspect'})
 
     def test_empty_result_exits_successfully(self):
-        result = self.cli('list', containers=[container('foreign', '/another/checkout')])
+        result = self.cli('list', containers=[container('foreign', 'another-controller')])
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertRegex(result.stdout.strip(), r'^No sandboxes owned by (this checkout|controller [^.]+)\.$')
 

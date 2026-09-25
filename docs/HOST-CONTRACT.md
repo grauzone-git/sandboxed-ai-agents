@@ -103,6 +103,9 @@ launcher is a checkout script. In the workspace storage suite, five
 script-only checkout source protection checks are skipped for the binary, and
 two binary-only checks replace them: state, `~/.ssh`, and build-context
 protection, and the global-install suggestion for a project-local executable.
+The list suite checks that the binary reports checkout-owned sandboxes as
+adoptable without changing them. `adopt` itself, including SSH migration, is
+covered by `go test ./...` only.
 
 These suites use fake commands only. Passing them does not validate real
 Podman, SSH, WSL2, or Azure sign-in, and cross-compilation alone does not

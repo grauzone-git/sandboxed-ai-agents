@@ -77,6 +77,9 @@ func fakeUpdatePodman(args []string) bool {
 			step = "tools-boot"
 		}
 	}
+	if fakeAdoptionSSHMutation(step) {
+		return true
+	}
 	if step == "ready" {
 		fmt.Fprintln(os.Stderr, "readiness attempt not ready")
 	}
@@ -110,6 +113,10 @@ func fakeUpdatePodman(args []string) bool {
 			fmt.Print("true")
 		}
 	case "ps":
+		if names, ok := os.LookupEnv("SANDBOX_ADOPTION_PS_NAMES"); ok {
+			fmt.Print(names)
+			return true
+		}
 		for name := range state {
 			fmt.Println(name)
 		}
@@ -119,8 +126,23 @@ func fakeUpdatePodman(args []string) bool {
 			os.Exit(1)
 		}
 		respond([]any{state[name]})
+	case "inspect":
+		name := key(args[len(args)-1])
+		if name == "" {
+			os.Exit(1)
+		}
+		labels := state[name]["Config"].(map[string]any)["Labels"].(map[string]any)
+		if strings.Contains(strings.Join(args, " "), "{{json .Config.Labels}}") {
+			respond(labels)
+		} else {
+			fmt.Print(labels["io.sandboxed-agents.project"])
+		}
 	case "volume":
-		fmt.Print("default")
+		value := os.Getenv("SANDBOX_UPDATE_VOLUME_OWNER")
+		if value == "" {
+			value = "default"
+		}
+		fmt.Print(value)
 	case "image":
 		fmt.Print(strings.Repeat("c", 64))
 	case "build":
@@ -221,6 +243,9 @@ func fakeUpdatePodman(args []string) bool {
 		delete(state, name)
 		save()
 	case "exec":
+		if fakeSSHPodman(args) {
+			return true
+		}
 		return true
 	default:
 		fmt.Fprintln(os.Stderr, "unexpected update fake", args)

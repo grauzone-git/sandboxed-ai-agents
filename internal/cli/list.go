@@ -5,42 +5,48 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
 	"text/tabwriter"
 )
 
-type containerInfo struct {
-	Name       string
-	Config     struct{ Labels map[string]string }
-	State      struct{ Running bool }
-	Mounts     []struct{ Type, Source, Name, Destination string }
-	HostConfig struct {
-		PortBindings map[string][]struct{ HostPort string }
-	}
-}
-
 func list() error {
 	names, err := capturePodman(false, "ps", "--all", "--filter", "label="+ownerLabel+"="+owner(), "--format", "{{.Names}}")
 	if err != nil {
 		return err
 	}
-	sorted := strings.Fields(string(names))
+	checkoutNames, err := capturePodman(false, "ps", "--all", "--filter", "label="+ownerLabel, "--format", "{{.Names}}")
+	if err != nil {
+		return err
+	}
+	sorted := strings.Fields(string(names) + "\n" + string(checkoutNames))
 	slices.Sort(sorted)
 	sorted = slices.Compact(sorted)
 	var rows [][]string
+	var adoptable []string
 	for _, name := range sorted {
 		data, err := capturePodman(true, "container", "inspect", name)
 		if err != nil {
 			continue
 		} // The container may have disappeared since listing.
-		var infos []containerInfo
+		var infos []updateContainer
 		if err := json.Unmarshal(data, &infos); err != nil || len(infos) != 1 || infos[0].Name == "" {
 			return fmt.Errorf("Podman returned unexpected details for %s", name)
 		}
 		info := infos[0]
-		if info.Config.Labels[ownerLabel] != owner() {
+		if source := info.Config.Labels[ownerLabel]; source != owner() {
+			if isUpdateBackup(info) {
+				continue
+			}
+			if checkoutOwner(source) && namePattern.MatchString(name) {
+				argument := shellQuote(source)
+				if runtime.GOOS == "windows" {
+					argument = "'" + strings.ReplaceAll(source, "'", "''") + "'"
+				}
+				adoptable = append(adoptable, fmt.Sprintf("%s is checkout-owned. To adopt: sandboxed-agents %s adopt --from %s", name, name, argument))
+			}
 			continue
 		}
 		row := []string{strings.TrimPrefix(info.Name, "/"), "stopped", "-", "-", "-"}
@@ -70,6 +76,9 @@ func list() error {
 	}
 	if len(rows) == 0 {
 		fmt.Fprintf(os.Stdout, "No sandboxes owned by controller %s.\n", owner())
+		for _, line := range adoptable {
+			fmt.Fprintln(os.Stdout, line)
+		}
 		return nil
 	}
 	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
@@ -77,7 +86,13 @@ func list() error {
 	for _, row := range rows {
 		fmt.Fprintln(writer, strings.Join(row, "\t"))
 	}
-	return writer.Flush()
+	if err := writer.Flush(); err != nil {
+		return err
+	}
+	for _, line := range adoptable {
+		fmt.Fprintln(os.Stdout, line)
+	}
+	return nil
 }
 
 var agentIDPattern = regexp.MustCompile(`^[a-z0-9-]+$`)

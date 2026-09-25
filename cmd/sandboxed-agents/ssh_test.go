@@ -20,7 +20,14 @@ func fakeSSHPodman(args []string) bool {
 		return true
 	}
 	if args[0] == "exec" && args[len(args)-1] == "/var/lib/agent-sshd/ssh_host_ed25519_key.pub" {
+		if os.Getenv("SANDBOX_ADOPTION_INTERRUPT") == "verification" {
+			interruptAdoptionParent()
+		}
 		fmt.Print(os.Getenv("SANDBOX_TEST_HOST_KEY"))
+		return true
+	}
+	if args[0] == "exec" && args[len(args)-1] == "/var/lib/agent-sshd/authorized_keys" {
+		fmt.Print(os.Getenv("SANDBOX_TEST_AUTHORIZED_KEYS"))
 		return true
 	}
 	return false

@@ -290,15 +290,9 @@ func requireOwned(name string) error {
 	return nil
 }
 func requireVolumeOwned(name string) error {
-	data, err := capturePodman(false, "volume", "inspect", "--format", `{{index .Labels "`+ownerLabel+`"}}`, name)
-	if err != nil {
-		return err
-	}
-	if strings.TrimSpace(string(data)) != owner() {
-		return fmt.Errorf("volume %s belongs to another configuration", name)
-	}
-	return nil
+	return requireContainerVolumeOwned(name, owner(), nil)
 }
+
 func sandboxVolumes(name string) []string {
 	return []string{name + "-home", name + "-sshd", name + "-workspace"}
 }
@@ -416,7 +410,7 @@ func removeSandbox(name string, removeVolumes bool) error {
 				return err
 			}
 			if exists {
-				if err := requireVolumeOwned(volume); err != nil {
+				if err := requireAttachedVolumeOwned(name, volume); err != nil {
 					return err
 				}
 				volumes = append(volumes, volume)
@@ -508,11 +502,12 @@ func waitForEntrypoint(name string) error {
 }
 
 type containerCreation struct {
-	command, cidfile, transaction string
+	command, owner, cidfile string
+	labels                  map[string]string
 }
 
 func createArguments(name string, options createOptions, image string, runtimeArgs []string) []string {
-	return containerArguments(name, options, image, runtimeArgs, containerCreation{command: "run"})
+	return containerArguments(name, options, image, runtimeArgs, containerCreation{command: "run", owner: owner()})
 }
 
 func containerArguments(name string, options createOptions, image string, runtimeArgs []string, creation containerCreation) []string {
@@ -524,11 +519,16 @@ func containerArguments(name string, options createOptions, image string, runtim
 	if creation.command == "run" {
 		args = append(args, "--detach")
 	}
-	args = append(args, "--name", name, "--hostname", name, "--label", ownerLabel+"="+owner(), "--label", versionLabel+"="+Version, "--label", capabilitiesLabel+"="+options.capabilities, "--userns=keep-id:uid=1000,gid=1000", "--user", "0:0")
+	args = append(args, "--name", name, "--hostname", name, "--label", ownerLabel+"="+creation.owner, "--label", versionLabel+"="+Version, "--label", capabilitiesLabel+"="+options.capabilities, "--userns=keep-id:uid=1000,gid=1000", "--user", "0:0")
 	args = append(args, runtimeArgs...)
 	args = append(args, "--network=pasta:--no-map-gw", "--memory="+options.memory, "--cpus="+options.cpus, "--pids-limit="+options.pidsLimit, "--shm-size="+options.shmSize, "--publish", "127.0.0.1:"+options.port+":2222", "--volume", workspace, "--volume", name+"-home:/home/agent", "--volume", name+"-sshd:/var/lib/agent-sshd")
-	if creation.transaction != "" {
-		args = append(args, "--label", updateTransactionLabel+"="+creation.transaction)
+	keys := make([]string, 0, len(creation.labels))
+	for key := range creation.labels {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		args = append(args, "--label", key+"="+creation.labels[key])
 	}
 	if creation.cidfile != "" {
 		args = append(args, "--cidfile", creation.cidfile)
